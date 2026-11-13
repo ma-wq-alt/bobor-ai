@@ -11,7 +11,6 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
 
-// Настройка Multer для фото/видео (лимит 20 МБ)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const db = createClient({
@@ -23,15 +22,11 @@ const JWT_SECRET = process.env.JWT_SECRET || 'bobor-super-secret-key-123';
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER || '', 
-    pass: process.env.EMAIL_PASS || '' 
-  }
+  auth: { user: process.env.EMAIL_USER || '', pass: process.env.EMAIL_PASS || '' }
 });
 
 async function initDB() {
   try {
-    // Автообновление структуры (на случай старых баз)
     try { await db.execute('SELECT theme FROM users LIMIT 1'); } 
     catch (e) {
       if (e.message.includes('no such column') || e.message.includes('no such table')) {
@@ -50,10 +45,18 @@ async function initDB() {
         otp_expires DATETIME,
         theme TEXT DEFAULT 'dark',
         language TEXT DEFAULT 'ru',
+        memory_facts TEXT DEFAULT '',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
+    try { await db.execute('SELECT memory_facts FROM users LIMIT 1'); } 
+    catch (e) {
+      if (e.message.includes('no such column')) {
+        await db.execute('ALTER TABLE users ADD COLUMN memory_facts TEXT DEFAULT ""');
+      }
+    }
+
     await db.execute(`
       CREATE TABLE IF NOT EXISTS bot_knowledge (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,7 +87,6 @@ async function initDB() {
       )
     `);
     
-    // Создаем админа
     const adminEmail = 'mar.maks999@gmail.com';
     const adminCheck = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [adminEmail] });
     if (adminCheck.rows.length === 0) {
@@ -95,10 +97,8 @@ async function initDB() {
       });
       console.log('✅ Админский аккаунт (hank) создан');
     }
-    console.log('✅ База данных инициализирована');
-  } catch (err) {
-    console.error('❌ Ошибка БД:', err.message);
-  }
+    console.log('✅ База данных инициализирована (с памятью)');
+  } catch (err) { console.error('❌ Ошибка БД:', err.message); }
 }
 initDB();
 
@@ -107,12 +107,9 @@ function authMiddleware(req, res, next) {
   if (!authHeader) return res.status(401).json({ error: 'Нет токена' });
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    req.user = jwt.verify(token, JWT_SECRET);
     next();
-  } catch (err) {
-    res.status(401).json({ error: 'Неверный токен' });
-  }
+  } catch (err) { res.status(401).json({ error: 'Неверный токен' }); }
 }
 
 // --- ВХОД ПО ПАРОЛЮ ---
@@ -123,10 +120,8 @@ app.post('/api/login', async (req, res) => {
     const result = await db.execute({ sql: 'SELECT * FROM users WHERE username = ? OR email = ?', args: [username, username] });
     const user = result.rows[0];
     if (!user || !user.password_hash) return res.status(401).json({ error: 'Неверный логин или пароль' });
-    
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Неверный логин или пароль' });
-    
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, role: user.role, theme: user.theme || 'dark', language: user.language || 'ru' });
   } catch (err) { res.status(500).json({ error: 'Ошибка сервера' }); }
@@ -237,7 +232,7 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ОТПРАВКА СООБЩЕНИЙ (ТЕКСТ, ФОТО, ВИДЕО) ---
+// --- ОТПРАВКА СООБЩЕНИЙ (С ПАМЯТЬЮ, ФОТО И ВИДЕО) ---
 app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
   const { chatId } = req.params;
   const { message, mode } = req.body; 
@@ -273,10 +268,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
     // 2. Генерация ВИДЕО (Agnes AI)
     if (/видео|video/i.test(message || '')) {
       const prompt = message.replace(/видео|video|сгенерируй|создай|сделай/gi, '').trim();
-      
-      if (!prompt) {
-        return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать. Например: "видео бобер в космосе"' });
-      }
+      if (!prompt) return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать.' });
 
       try {
         const agnesRes = await fetch('https://apihub.agnes-ai.com/v1/videos', {
@@ -284,13 +276,11 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
           headers: { 'Authorization': `Bearer ${process.env.AGNES_API_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: 'agnes-video-2.5-flash', prompt: prompt, seconds: '5', mode: 'text', size: '720P', aspect_ratio: '16:9' })
         });
-
         if (!agnesRes.ok) throw new Error(`Agnes API: ${agnesRes.status}`);
         const agnesData = await agnesRes.json();
         const videoId = agnesData.video_id || agnesData.id;
         if (!videoId) throw new Error('Agnes не вернул video_id');
 
-        // Ждем генерации (до 3 минут)
         let videoUrl = null;
         let attempts = 0;
         while (attempts < 90) {
@@ -302,18 +292,44 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
           else if (statusData.status === 'failed') throw new Error('Agnes не смог сгенерировать видео');
           attempts++;
         }
-
         if (!videoUrl) return res.json({ reply: `🎬 Видео все еще генерируется. Проверь позже: https://apihub.agnes-ai.com/agnesapi?video_id=${videoId}&model_name=agnes-video-2.5-flash` });
         
         const replyText = `🎬 Вот твое видео по запросу: "${prompt}"`;
         await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, videoUrl] });
         return res.json({ reply: replyText, imageUrl: videoUrl });
-      } catch (videoErr) {
-        return res.json({ reply: '🎬 Не удалось сгенерировать видео: ' + videoErr.message });
-      }
+      } catch (videoErr) { return res.json({ reply: '🎬 Не удалось сгенерировать видео: ' + videoErr.message }); }
     }
 
-    // 3. Обычный запрос к Z.ai
+    // 3. ИЗВЛЕЧЕНИЕ ПАМЯТИ (НОВОЕ!)
+    if (message && !imageFile) {
+      try {
+        const memoryCheck = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.ZAI_API_KEY}` },
+          body: JSON.stringify({
+            model: 'glm-4.5-flash',
+            messages: [
+              { role: 'system', content: 'Ты — ассистент, который извлекает факты о пользователе. Если в сообщении есть важная информация (имя, возраст, город, профессия, хобби, предпочтения), напиши её кратко. Если нет — напиши "НЕТ".' },
+              { role: 'user', content: message }
+            ],
+            max_tokens: 50, temperature: 0
+          })
+        });
+        const memData = await memoryCheck.json();
+        const fact = memData.choices[0].message.content.trim();
+        
+        if (fact !== "НЕТ" && fact.length > 5) {
+          const userRes = await db.execute({ sql: 'SELECT memory_facts FROM users WHERE id = ?', args: [req.user.id] });
+          let currentFacts = userRes.rows[0].memory_facts || '';
+          if (!currentFacts.includes(fact)) {
+            const newFacts = currentFacts ? currentFacts + ' ' + fact : fact;
+            await db.execute({ sql: 'UPDATE users SET memory_facts = ? WHERE id = ?', args: [newFacts, req.user.id] });
+          }
+        }
+      } catch (e) { console.log('Ошибка памяти:', e.message); }
+    }
+
+    // 4. ОБЫЧНЫЙ ЗАПРОС (с учетом памяти и знаний)
     const historyResult = await db.execute({ sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20', args: [chatId] });
     const history = historyResult.rows.reverse().map(row => ({ role: row.role, content: row.content }));
 
@@ -322,7 +338,11 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
     
     const knowledgeRes = await db.execute('SELECT prompt_text FROM bot_knowledge ORDER BY id DESC LIMIT 1');
     const adminPrompt = knowledgeRes.rows.length > 0 ? knowledgeRes.rows[0].prompt_text : '';
-    const systemPrompt = adminPrompt.trim() !== '' ? adminPrompt : 'Ты — БОБОР-AI, умный и дружелюбный ассистент. Отвечай на русском.';
+    const userMemoryRes = await db.execute({ sql: 'SELECT memory_facts FROM users WHERE id = ?', args: [req.user.id] });
+    const userMemory = userMemoryRes.rows[0].memory_facts || '';
+
+    let systemPrompt = adminPrompt.trim() !== '' ? adminPrompt : 'Ты — БОБОР-AI, умный и дружелюбный ассистент. Отвечай на русском.';
+    if (userMemory) systemPrompt += `\n\nВажно! Ты знаешь о пользователе: ${userMemory}. Учитывай это.`;
 
     const messagesForAI = [ { role: 'system', content: systemPrompt }, ...history ];
     let model = imageFile ? 'glm-4.6v-flash' : 'glm-4.5-flash'; 
@@ -340,10 +360,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
     await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)', args: [chatId, 'assistant', replyText] });
     res.json({ reply: replyText });
 
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Ошибка: ' + error.message });
-  }
+  } catch (error) { res.status(500).json({ error: 'Ошибка: ' + error.message }); }
 });
 
 const PORT = process.env.PORT || 3000;
