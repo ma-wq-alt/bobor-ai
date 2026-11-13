@@ -161,6 +161,14 @@ app.post('/api/user/settings', authMiddleware, async (req, res) => {
   }
 });
 
+app.get('/api/user/limits', authMiddleware, async (req, res) => {
+  try {
+    const result = await db.execute({ sql: 'SELECT ai_free_left, ai_sub_until FROM users WHERE email = ?', args: [req.user.email] });
+    const data = result.rows[0];
+    res.json({ ai_free_left: data?.ai_free_left ?? 20, ai_sub_until: data?.ai_sub_until || null });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/bot/knowledge', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
   try {
@@ -196,10 +204,8 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
 app.delete('/api/chats/:chatId', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
-    const check = await db.execute({ sql: 'SELECT id FROM chats WHERE id = ? AND user_id = ?', args: [chatId, req.user.id] });
-    if (check.rows.length === 0) return res.status(403).json({ error: 'Доступ запрещён' });
     await db.execute({ sql: 'DELETE FROM messages WHERE chat_id = ?', args: [chatId] });
-    await db.execute({ sql: 'DELETE FROM chats WHERE id = ?', args: [chatId] });
+    await db.execute({ sql: 'DELETE FROM chats WHERE id = ? AND user_id = ?', args: [chatId, req.user.id] });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -208,9 +214,7 @@ app.put('/api/chats/:chatId', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   const { title } = req.body;
   try {
-    const check = await db.execute({ sql: 'SELECT id FROM chats WHERE id = ? AND user_id = ?', args: [chatId, req.user.id] });
-    if (check.rows.length === 0) return res.status(403).json({ error: 'Доступ запрещён' });
-    await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
+    await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ? AND user_id = ?', args: [title, chatId, req.user.id] });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -219,7 +223,6 @@ app.put('/api/chats/:chatId/pin', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
     const check = await db.execute({ sql: 'SELECT pinned FROM chats WHERE id = ? AND user_id = ?', args: [chatId, req.user.id] });
-    if (check.rows.length === 0) return res.status(403).json({ error: 'Доступ запрещён' });
     const newPinned = check.rows[0].pinned === 1 ? 0 : 1;
     await db.execute({ sql: 'UPDATE chats SET pinned = ? WHERE id = ?', args: [newPinned, chatId] });
     res.json({ success: true, pinned: newPinned });
@@ -229,50 +232,9 @@ app.put('/api/chats/:chatId/pin', authMiddleware, async (req, res) => {
 app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
-    const chatCheck = await db.execute({ sql: 'SELECT id FROM chats WHERE id = ? AND user_id = ?', args: [chatId, req.user.id] });
-    if (chatCheck.rows.length === 0) return res.status(403).json({ error: 'Доступ запрещён' });
     const result = await db.execute({ sql: 'SELECT role, content, image_url FROM messages WHERE chat_id = ? ORDER BY id ASC', args: [chatId] });
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/pay_sub', authMiddleware, async (req, res) => {
-  const userEmail = req.user.email;
-  if (!userEmail) return res.status(400).json({ error: 'Email не найден' });
-
-  try {
-    const ws = new WebSocket(BANK_WS_URL);
-    
-    ws.on('open', () => {
-      ws.send(JSON.stringify({ type: 'buy_sub_ai', email: userEmail }));
-    });
-
-    ws.on('message', (data) => {
-      const msg = JSON.parse(data.toString());
-      if (msg.type === 'error') {
-        ws.close();
-        return res.status(400).json({ success: false, error: msg.message });
-      }
-      if (msg.type === 'toast') {
-        ws.close();
-        return res.json({ success: true, message: msg.message });
-      }
-    });
-
-    ws.on('error', (err) => {
-      console.error('Ошибка WebSocket Банка:', err);
-      res.status(500).json({ success: false, error: 'Банк недоступен. Попробуйте позже.' });
-    });
-
-    setTimeout(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
-        if (!res.headersSent) res.status(504).json({ success: false, error: 'Банк не ответил вовремя.' });
-      }
-    }, 10000);
-  } catch (err) {
-    res.status(500).json({ error: 'Ошибка соединения с Банком' });
-  }
 });
 
 app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
@@ -281,9 +243,21 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
   const imageFile = req.file;
 
   try {
+    const userCheck = await db.execute({ sql: 'SELECT ai_free_left, ai_sub_until FROM users WHERE email = ?', args: [req.user.email] });
+    const userData = userCheck.rows[0];
+    
+    if (userData) {
+      const hasSub = userData.ai_sub_until && new Date(userData.ai_sub_until) > new Date();
+      if (!hasSub) {
+        if ((userData.ai_free_left ?? 0) <= 0) {
+          return res.status(403).json({ error: 'Лимит бесплатных запросов исчерпан. Оплатите подписку!' });
+        }
+        await db.execute({ sql: 'UPDATE users SET ai_free_left = ai_free_left - 1 WHERE email = ?', args: [req.user.email] });
+      }
+    }
+
     let imageUrlInDB = null;
     let imageBase64 = null;
-
     if (imageFile) {
       imageBase64 = `data:${imageFile.mimetype};base64,${imageFile.buffer.toString('base64')}`;
       imageUrlInDB = "Прикреплено фото";
@@ -378,7 +352,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
     const knowledgeRes = await db.execute('SELECT prompt_text FROM bot_knowledge ORDER BY id DESC LIMIT 1');
     const adminPrompt = knowledgeRes.rows.length > 0 ? knowledgeRes.rows[0].prompt_text : '';
     const userMemoryRes = await db.execute({ sql: 'SELECT memory_facts FROM users WHERE id = ?', args: [req.user.id] });
-    const userMemory = userMemoryRes.rows[0].memory_facts || '';
+    const userMemory = userMemoryRes.rows[0]?.memory_facts || '';
 
     let systemPrompt = adminPrompt.trim() !== '' ? adminPrompt : 'Ты — БОБОР-AI, умный и дружелюбный ассистент. Отвечай на русском.';
     if (userMemory) systemPrompt += `\n\nТы знаешь о пользователе: ${userMemory}`;
