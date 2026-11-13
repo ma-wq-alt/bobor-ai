@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL || 'file:local.db',
@@ -30,11 +30,9 @@ const transporter = nodemailer.createTransport({
 
 async function initDB() {
   try {
-    // Авто-обновление структуры базы
     try { await db.execute('SELECT theme FROM users LIMIT 1'); } 
     catch (e) {
       if (e.message.includes('no such column') || e.message.includes('no such table')) {
-        console.log('⚠️ Обновляем структуру базы...');
         await db.execute('DROP TABLE IF EXISTS users');
       }
     }
@@ -54,7 +52,6 @@ async function initDB() {
       )
     `);
     
-    // Таблица для "обучения" бота
     await db.execute(`
       CREATE TABLE IF NOT EXISTS bot_knowledge (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +69,7 @@ async function initDB() {
         FOREIGN KEY(user_id) REFERENCES users(id)
       )
     `);
+    
     await db.execute(`
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,7 +91,6 @@ async function initDB() {
         args: ['hank', adminEmail, hash, 'admin']
       });
     }
-    console.log('✅ База данных готова');
   } catch (err) {
     console.error('❌ Ошибка БД:', err.message);
   }
@@ -116,21 +113,15 @@ function authMiddleware(req, res, next) {
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   try {
-    const result = await db.execute({
-      sql: 'SELECT * FROM users WHERE username = ? OR email = ?',
-      args: [username, username]
-    });
+    const result = await db.execute({ sql: 'SELECT * FROM users WHERE username = ? OR email = ?', args: [username, username] });
     const user = result.rows[0];
     if (!user || !user.password_hash) return res.status(401).json({ error: 'Неверный логин или пароль' });
-    
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Неверный логин или пароль' });
     
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, role: user.role, theme: user.theme || 'dark', language: user.language || 'ru' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/send-code', async (req, res) => {
@@ -144,10 +135,7 @@ app.post('/api/send-code', async (req, res) => {
 
     if (!user) {
       const baseUsername = email.split('@')[0] + Math.floor(Math.random() * 100);
-      await db.execute({
-        sql: 'INSERT INTO users (email, username, role, otp_code, otp_expires) VALUES (?, ?, ?, ?, ?)',
-        args: [email, baseUsername, 'user', otp, expires]
-      });
+      await db.execute({ sql: 'INSERT INTO users (email, username, role, otp_code, otp_expires) VALUES (?, ?, ?, ?, ?)', args: [email, baseUsername, 'user', otp, expires] });
     } else {
       await db.execute({ sql: 'UPDATE users SET otp_code = ?, otp_expires = ? WHERE email = ?', args: [otp, expires, email] });
     }
@@ -157,7 +145,7 @@ app.post('/api/send-code', async (req, res) => {
         from: '"БОБОР ПРОДАКШН" <' + process.env.EMAIL_USER + '>',
         to: email,
         subject: 'БОБОР ПРОДАКШН: Ваш код доступа',
-        html: `<div style="font-family: Arial; background: #0f0c29; color: #fff; padding: 20px;"><h2>Ваш код: <b>${otp}</b></h2></div>`
+        html: `<div style="font-family: Arial; background: #0f0c29; color: #fff; padding: 20px; border-radius: 10px;"><h2>Ваш код: <b style="font-size: 24px; color: #a78bfa;">${otp}</b></h2></div>`
       });
       res.json({ success: true, message: 'Код отправлен на почту!' });
     } else {
@@ -174,12 +162,9 @@ app.post('/api/verify-code', async (req, res) => {
     const user = result.rows[0];
     if (!user) return res.status(401).json({ error: 'Пользователь не найден' });
     if (user.otp_code !== code) return res.status(401).json({ error: 'Неверный код' });
-    
     const now = new Date().toISOString();
     if (now > user.otp_expires) return res.status(401).json({ error: 'Код истек' });
-
     await db.execute({ sql: 'UPDATE users SET otp_code = NULL, otp_expires = NULL WHERE id = ?', args: [user.id] });
-
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, role: user.role, theme: user.theme || 'dark', language: user.language || 'ru' });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -188,10 +173,7 @@ app.post('/api/verify-code', async (req, res) => {
 app.post('/api/user/settings', authMiddleware, async (req, res) => {
   const { username, theme, language } = req.body;
   try {
-    await db.execute({
-      sql: 'UPDATE users SET username = ?, theme = ?, language = ? WHERE id = ?',
-      args: [username, theme, language, req.user.id]
-    });
+    await db.execute({ sql: 'UPDATE users SET username = ?, theme = ?, language = ? WHERE id = ?', args: [username, theme, language, req.user.id] });
     const newToken = jwt.sign({ id: req.user.id, username, role: req.user.role, theme, language }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ success: true, token: newToken, username, theme, language });
   } catch (err) {
@@ -200,7 +182,6 @@ app.post('/api/user/settings', authMiddleware, async (req, res) => {
   }
 });
 
-// --- ОБУЧЕНИЕ БОТА (ТОЛЬКО ДЛЯ АДМИНА) ---
 app.get('/api/bot/knowledge', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
   try {
@@ -213,31 +194,22 @@ app.post('/api/bot/knowledge', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
   const { prompt } = req.body;
   try {
-    await db.execute('DELETE FROM bot_knowledge'); // Очищаем старое
-    await db.execute({
-      sql: 'INSERT INTO bot_knowledge (prompt_text) VALUES (?)',
-      args: [prompt]
-    });
+    await db.execute('DELETE FROM bot_knowledge');
+    await db.execute({ sql: 'INSERT INTO bot_knowledge (prompt_text) VALUES (?)', args: [prompt] });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
-    const result = await db.execute({
-      sql: 'SELECT * FROM chats WHERE user_id = ? ORDER BY created_at DESC',
-      args: [req.user.id]
-    });
+    const result = await db.execute({ sql: 'SELECT * FROM chats WHERE user_id = ? ORDER BY created_at DESC', args: [req.user.id] });
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/chats', authMiddleware, async (req, res) => {
   try {
-    const result = await db.execute({
-      sql: 'INSERT INTO chats (user_id, title) VALUES (?, ?) RETURNING id',
-      args: [req.user.id, 'Новый чат']
-    });
+    const result = await db.execute({ sql: 'INSERT INTO chats (user_id, title) VALUES (?, ?) RETURNING id', args: [req.user.id, 'Новый чат'] });
     res.json({ chatId: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -266,10 +238,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       imageUrlInDB = "Прикреплено фото";
     }
 
-    await db.execute({
-      sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)',
-      args: [chatId, 'user', message || 'Отправил(а) фото', imageUrlInDB]
-    });
+    await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'user', message || 'Отправил(а) фото', imageUrlInDB] });
 
     const countMsg = await db.execute({ sql: 'SELECT COUNT(*) as count FROM messages WHERE chat_id = ?', args: [chatId] });
     if (countMsg.rows[0].count === 1) {
@@ -282,31 +251,21 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       const prompt = message.replace(/нарисуй|сгенерируй|покажи картинку|создай изображение/gi, '').trim();
       const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true`;
       const replyText = `🎨 Вот твоя картинка по запросу: "${prompt}"`;
-      await db.execute({
-        sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)',
-        args: [chatId, 'assistant', replyText, pollUrl]
-      });
+      await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, pollUrl] });
       return res.json({ reply: replyText, imageUrl: pollUrl });
     }
 
     const historyResult = await db.execute({ sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20', args: [chatId] });
     const history = historyResult.rows.reverse().map(row => ({ role: row.role, content: row.content }));
 
-    const userContent = imageBase64 
-      ? [ { type: "text", text: message || "Что на этой картинке?" }, { type: "image_url", image_url: { url: imageBase64 } } ]
-      : message;
-
+    const userContent = imageBase64 ? [ { type: "text", text: message || "Что на этой картинке?" }, { type: "image_url", image_url: { url: imageBase64 } } ] : message;
     history[history.length - 1] = { role: 'user', content: userContent };
     
-    // Получаем базу знаний от админа
     const knowledgeRes = await db.execute('SELECT prompt_text FROM bot_knowledge ORDER BY id DESC LIMIT 1');
-    const adminPrompt = knowledgeRes.rows.length > 0 ? knowledgeRes.rows[0].prompt_text : 'Ты — БОБОР-AI, умный и дружелюбный ассистент. Отвечай на русском.';
-    
-    // Если админ задал свои инструкции, используем их, если нет — стандартные
+    const adminPrompt = knowledgeRes.rows.length > 0 ? knowledgeRes.rows[0].prompt_text : '';
     const systemPrompt = adminPrompt.trim() !== '' ? adminPrompt : 'Ты — БОБОР-AI, умный и дружелюбный ассистент. Отвечай на русском.';
 
     const messagesForAI = [ { role: 'system', content: systemPrompt }, ...history ];
-
     let model = imageFile ? 'glm-4.6v-flash' : 'glm-4.5-flash'; 
     
     const aiResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
@@ -315,18 +274,18 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       body: JSON.stringify({ model: model, messages: messagesForAI, temperature: 0.7 })
     });
 
-    if (!aiResponse.ok) throw new Error(`Ошибка API: ${aiResponse.status}`);
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text();
+      throw new Error(`API вернул ${aiResponse.status}: ${errText}`);
+    }
     const aiData = await aiResponse.json();
     const replyText = aiData.choices[0].message.content;
 
-    await db.execute({
-      sql: 'INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)',
-      args: [chatId, 'assistant', replyText]
-    });
-
+    await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)', args: [chatId, 'assistant', replyText] });
     res.json({ reply: replyText });
 
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Ошибка: ' + error.message });
   }
 });
