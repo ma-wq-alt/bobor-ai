@@ -25,6 +25,17 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.EMAIL_USER || '', pass: process.env.EMAIL_PASS || '' }
 });
 
+// Функция для повторной попытки при 429
+async function fetchWithRetry(url, options, retries = 3, delay = 3000) {
+  for (let i = 0; i < retries; i++) {
+    const res = await fetch(url, options);
+    if (res.status !== 429) return res;
+    console.log(`⚠️ 429 лимит, ждем ${delay}мс... (попытка ${i+1}/${retries})`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+  throw new Error('Превышен лимит запросов к Z.ai. Подожди минуту и попробуй снова.');
+}
+
 async function initDB() {
   try {
     try { await db.execute('SELECT theme FROM users LIMIT 1'); } 
@@ -65,15 +76,24 @@ async function initDB() {
       )
     `);
 
+    // Таблица чатов с полем pinned (закрепленные)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS chats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         title TEXT,
+        pinned INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(user_id) REFERENCES users(id)
       )
     `);
+    
+    try { await db.execute('SELECT pinned FROM chats LIMIT 1'); } 
+    catch (e) {
+      if (e.message.includes('no such column')) {
+        await db.execute('ALTER TABLE chats ADD COLUMN pinned INTEGER DEFAULT 0');
+      }
+    }
     
     await db.execute(`
       CREATE TABLE IF NOT EXISTS messages (
@@ -97,7 +117,7 @@ async function initDB() {
       });
       console.log('✅ Админский аккаунт (hank) создан');
     }
-    console.log('✅ База данных инициализирована (с памятью)');
+    console.log('✅ База данных готова');
   } catch (err) { console.error('❌ Ошибка БД:', err.message); }
 }
 initDB();
@@ -112,7 +132,7 @@ function authMiddleware(req, res, next) {
   } catch (err) { res.status(401).json({ error: 'Неверный токен' }); }
 }
 
-// --- ВХОД ПО ПАРОЛЮ ---
+// --- АВТОРИЗАЦИЯ ---
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
@@ -127,7 +147,6 @@ app.post('/api/login', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Ошибка сервера' }); }
 });
 
-// --- ОТПРАВКА КОДА НА ПОЧТУ ---
 app.post('/api/send-code', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Введите почту' });
@@ -159,7 +178,6 @@ app.post('/api/send-code', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Ошибка отправки' }); }
 });
 
-// --- ПРОВЕРКА КОДА ---
 app.post('/api/verify-code', async (req, res) => {
   const { email, code } = req.body;
   try {
@@ -175,7 +193,6 @@ app.post('/api/verify-code', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Ошибка сервера' }); }
 });
 
-// --- НАСТРОЙКИ ---
 app.post('/api/user/settings', authMiddleware, async (req, res) => {
   const { username, theme, language } = req.body;
   try {
@@ -188,7 +205,7 @@ app.post('/api/user/settings', authMiddleware, async (req, res) => {
   }
 });
 
-// --- БАЗА ЗНАНИЙ (АДМИН) ---
+// --- БАЗА ЗНАНИЙ ---
 app.get('/api/bot/knowledge', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
   try {
@@ -207,10 +224,13 @@ app.post('/api/bot/knowledge', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ЧАТЫ ---
+// --- УПРАВЛЕНИЕ ЧАТАМИ ---
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
-    const result = await db.execute({ sql: 'SELECT * FROM chats WHERE user_id = ? ORDER BY created_at DESC', args: [req.user.id] });
+    const result = await db.execute({ 
+      sql: 'SELECT * FROM chats WHERE user_id = ? ORDER BY pinned DESC, created_at DESC', 
+      args: [req.user.id] 
+    });
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -219,6 +239,42 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({ sql: 'INSERT INTO chats (user_id, title) VALUES (?, ?) RETURNING id', args: [req.user.id, 'Новый чат'] });
     res.json({ chatId: result.rows[0].id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Удалить чат
+app.delete('/api/chats/:chatId', authMiddleware, async (req, res) => {
+  const { chatId } = req.params;
+  try {
+    const check = await db.execute({ sql: 'SELECT id FROM chats WHERE id = ? AND user_id = ?', args: [chatId, req.user.id] });
+    if (check.rows.length === 0) return res.status(403).json({ error: 'Доступ запрещён' });
+    await db.execute({ sql: 'DELETE FROM messages WHERE chat_id = ?', args: [chatId] });
+    await db.execute({ sql: 'DELETE FROM chats WHERE id = ?', args: [chatId] });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Переименовать чат
+app.put('/api/chats/:chatId', authMiddleware, async (req, res) => {
+  const { chatId } = req.params;
+  const { title } = req.body;
+  try {
+    const check = await db.execute({ sql: 'SELECT id FROM chats WHERE id = ? AND user_id = ?', args: [chatId, req.user.id] });
+    if (check.rows.length === 0) return res.status(403).json({ error: 'Доступ запрещён' });
+    await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Закрепить/открепить чат
+app.put('/api/chats/:chatId/pin', authMiddleware, async (req, res) => {
+  const { chatId } = req.params;
+  try {
+    const check = await db.execute({ sql: 'SELECT pinned FROM chats WHERE id = ? AND user_id = ?', args: [chatId, req.user.id] });
+    if (check.rows.length === 0) return res.status(403).json({ error: 'Доступ запрещён' });
+    const newPinned = check.rows[0].pinned === 1 ? 0 : 1;
+    await db.execute({ sql: 'UPDATE chats SET pinned = ? WHERE id = ?', args: [newPinned, chatId] });
+    res.json({ success: true, pinned: newPinned });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -232,7 +288,7 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ОТПРАВКА СООБЩЕНИЙ ---
+// --- ОТПРАВКА СООБЩЕНИЙ (С ЗАЩИТОЙ ОТ 429) ---
 app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
   const { chatId } = req.params;
   const { message, mode } = req.body; 
@@ -255,25 +311,17 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
     }
 
-    // 1. Генерация КАРТИНКИ (ВЫСОКОЕ КАЧЕСТВО)
+    // 1. Генерация КАРТИНКИ
     const isDrawRequest = /нарисуй|сгенерируй|покажи картинку|создай изображение/i.test(message || '');
     if (isDrawRequest && !imageFile) {
       const prompt = message.replace(/нарисуй|сгенерируй|покажи картинку|создай изображение|мне|пожалуйста/gi, '').trim();
-      
-      // УВЕЛИЧЕНО РАЗРЕШЕНИЕ И ДОБАВЛЕНО УЛУЧШЕНИЕ КАЧЕСТВА
       const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
-      
-      const replyText = `🎨 Вот твоя картинка по запросу: "${prompt}" (если картинка не загрузилась, подожди пару секунд и обнови страницу)`;
-      
-      await db.execute({ 
-        sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', 
-        args: [chatId, 'assistant', replyText, pollUrl] 
-      });
-      
+      const replyText = `🎨 Вот твоя картинка по запросу: "${prompt}" (если не загрузилась, обнови страницу)`;
+      await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, pollUrl] });
       return res.json({ reply: replyText, imageUrl: pollUrl });
     }
 
-    // 2. Генерация ВИДЕО (Agnes AI)
+    // 2. Генерация ВИДЕО
     if (/видео|video/i.test(message || '')) {
       const prompt = message.replace(/видео|video|сгенерируй|создай|сделай/gi, '').trim();
       if (!prompt) return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать.' });
@@ -308,16 +356,16 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       } catch (videoErr) { return res.json({ reply: '🎬 Не удалось сгенерировать видео: ' + videoErr.message }); }
     }
 
-    // 3. ИЗВЛЕЧЕНИЕ ПАМЯТИ
+    // 3. ПАМЯТЬ
     if (message && !imageFile) {
       try {
-        const memoryCheck = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+        const memoryCheck = await fetchWithRetry('https://api.z.ai/api/paas/v4/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.ZAI_API_KEY}` },
           body: JSON.stringify({
             model: 'glm-4.5-flash',
             messages: [
-              { role: 'system', content: 'Ты — ассистент, который извлекает факты о пользователе. Если в сообщении есть важная информация (имя, возраст, город, профессия, хобби, предпочтения), напиши её кратко. Если нет — напиши "НЕТ".' },
+              { role: 'system', content: 'Извлеки факты о пользователе. Если есть важное (имя, хобби), напиши кратко. Если нет — "НЕТ".' },
               { role: 'user', content: message }
             ],
             max_tokens: 50, temperature: 0
@@ -337,11 +385,11 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       } catch (e) { console.log('Ошибка памяти:', e.message); }
     }
 
-    // 4. ОБЫЧНЫЙ ЗАПРОС (с учетом памяти и знаний)
+    // 4. ОСНОВНОЙ ЗАПРОС
     const historyResult = await db.execute({ sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20', args: [chatId] });
     const history = historyResult.rows.reverse().map(row => ({ role: row.role, content: row.content }));
 
-    const userContent = imageBase64 ? [ { type: "text", text: message || "Что на этой картинке?" }, { type: "image_url", image_url: { url: imageBase64 } } ] : message;
+    const userContent = imageBase64 ? [ { type: "text", text: message || "Что на картинке?" }, { type: "image_url", image_url: { url: imageBase64 } } ] : message;
     history[history.length - 1] = { role: 'user', content: userContent };
     
     const knowledgeRes = await db.execute('SELECT prompt_text FROM bot_knowledge ORDER BY id DESC LIMIT 1');
@@ -350,12 +398,12 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
     const userMemory = userMemoryRes.rows[0].memory_facts || '';
 
     let systemPrompt = adminPrompt.trim() !== '' ? adminPrompt : 'Ты — БОБОР-AI, умный и дружелюбный ассистент. Отвечай на русском.';
-    if (userMemory) systemPrompt += `\n\nВажно! Ты знаешь о пользователе: ${userMemory}. Учитывай это.`;
+    if (userMemory) systemPrompt += `\n\nТы знаешь о пользователе: ${userMemory}`;
 
     const messagesForAI = [ { role: 'system', content: systemPrompt }, ...history ];
     let model = imageFile ? 'glm-4.6v-flash' : 'glm-4.5-flash'; 
     
-    const aiResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+    const aiResponse = await fetchWithRetry('https://api.z.ai/api/paas/v4/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.ZAI_API_KEY}` },
       body: JSON.stringify({ model: model, messages: messagesForAI, temperature: 0.7 })
