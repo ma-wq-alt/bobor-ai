@@ -11,8 +11,10 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
 
+// Настройка Multer для загрузки картинок
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
+// Подключение к базе данных Turso
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL || 'file:local.db',
   authToken: process.env.TURSO_AUTH_TOKEN,
@@ -20,12 +22,13 @@ const db = createClient({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bobor-super-secret-key-123';
 
+// Настройка почты для отправки кодов
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: { user: process.env.EMAIL_USER || '', pass: process.env.EMAIL_PASS || '' }
 });
 
-// Функция для повторной попытки при 429
+// Функция для повторной попытки при 429 (лимит запросов)
 async function fetchWithRetry(url, options, retries = 3, delay = 3000) {
   for (let i = 0; i < retries; i++) {
     const res = await fetch(url, options);
@@ -36,6 +39,7 @@ async function fetchWithRetry(url, options, retries = 3, delay = 3000) {
   throw new Error('Превышен лимит запросов к Z.ai. Подожди минуту и попробуй снова.');
 }
 
+// Инициализация базы данных (создание таблиц)
 async function initDB() {
   try {
     try { await db.execute('SELECT theme FROM users LIMIT 1'); } 
@@ -106,6 +110,7 @@ async function initDB() {
       )
     `);
     
+    // Создание админа
     const adminEmail = 'mar.maks999@gmail.com';
     const adminCheck = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [adminEmail] });
     if (adminCheck.rows.length === 0) {
@@ -121,6 +126,7 @@ async function initDB() {
 }
 initDB();
 
+// Проверка токена пользователя
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Нет токена' });
@@ -131,7 +137,9 @@ function authMiddleware(req, res, next) {
   } catch (err) { res.status(401).json({ error: 'Неверный токен' }); }
 }
 
-// --- АВТОРИЗАЦИЯ ---
+// --- МАРШРУТЫ АВТОРИЗАЦИИ ---
+
+// Вход по паролю
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
@@ -146,6 +154,7 @@ app.post('/api/login', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Ошибка сервера' }); }
 });
 
+// Отправка кода на почту
 app.post('/api/send-code', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Введите почту' });
@@ -166,7 +175,7 @@ app.post('/api/send-code', async (req, res) => {
       await transporter.sendMail({
         from: '"БОБОР ПРОДАКШН" <' + process.env.EMAIL_USER + '>',
         to: email,
-        subject: 'БОБОР ПРОДАКШН: Ваш код доступа',
+        subject: 'БОБОР: Ваш код доступа',
         html: `<div style="font-family: Arial; background: #0f0c29; color: #fff; padding: 20px; border-radius: 10px;"><h2>Ваш код: <b style="font-size: 24px; color: #a78bfa;">${otp}</b></h2></div>`
       });
       res.json({ success: true, message: 'Код отправлен на почту!' });
@@ -177,6 +186,7 @@ app.post('/api/send-code', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Ошибка отправки' }); }
 });
 
+// Проверка кода
 app.post('/api/verify-code', async (req, res) => {
   const { email, code } = req.body;
   try {
@@ -192,6 +202,9 @@ app.post('/api/verify-code', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Ошибка сервера' }); }
 });
 
+// --- МАРШРУТЫ НАСТРОЕК И БАЗЫ ЗНАНИЙ ---
+
+// Сохранение настроек профиля
 app.post('/api/user/settings', authMiddleware, async (req, res) => {
   const { username, theme, language } = req.body;
   try {
@@ -204,7 +217,7 @@ app.post('/api/user/settings', authMiddleware, async (req, res) => {
   }
 });
 
-// --- БАЗА ЗНАНИЙ ---
+// Получение базы знаний (только админ)
 app.get('/api/bot/knowledge', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
   try {
@@ -213,6 +226,7 @@ app.get('/api/bot/knowledge', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Сохранение базы знаний (только админ)
 app.post('/api/bot/knowledge', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
   const { prompt } = req.body;
@@ -223,7 +237,9 @@ app.post('/api/bot/knowledge', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ЧАТЫ ---
+// --- МАРШРУТЫ ЧАТОВ ---
+
+// Получить список чатов (с сортировкой закрепленных)
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({ sql: 'SELECT * FROM chats WHERE user_id = ? ORDER BY pinned DESC, created_at DESC', args: [req.user.id] });
@@ -231,6 +247,7 @@ app.get('/api/chats', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Создать новый чат
 app.post('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({ sql: 'INSERT INTO chats (user_id, title) VALUES (?, ?) RETURNING id', args: [req.user.id, 'Новый чат'] });
@@ -238,6 +255,7 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Удалить чат
 app.delete('/api/chats/:chatId', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
@@ -249,6 +267,7 @@ app.delete('/api/chats/:chatId', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Переименовать чат
 app.put('/api/chats/:chatId', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   const { title } = req.body;
@@ -260,6 +279,7 @@ app.put('/api/chats/:chatId', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Закрепить/открепить чат
 app.put('/api/chats/:chatId/pin', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
@@ -271,6 +291,7 @@ app.put('/api/chats/:chatId/pin', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Получить сообщения конкретного чата
 app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
@@ -281,7 +302,7 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ОТПРАВКА СООБЩЕНИЙ ---
+// --- ОТПРАВКА СООБЩЕНИЙ (ГЛАВНАЯ ЛОГИКА) ---
 app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
   const { chatId } = req.params;
   const { message, mode } = req.body; 
@@ -296,6 +317,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       imageUrlInDB = "Прикреплено фото";
     }
 
+    // Сохраняем сообщение пользователя в БД
     await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'user', message || 'Отправил(а) фото', imageUrlInDB] });
 
     const countMsg = await db.execute({ sql: 'SELECT COUNT(*) as count FROM messages WHERE chat_id = ?', args: [chatId] });
@@ -304,17 +326,17 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
     }
 
-    // 1. Генерация КАРТИНКИ
+    // 1. ГЕНЕРАЦИЯ КАРТИНКИ
     const isDrawRequest = /нарисуй|сгенерируй|покажи картинку|создай изображение/i.test(message || '');
     if (isDrawRequest && !imageFile) {
       const prompt = message.replace(/нарисуй|сгенерируй|покажи картинку|создай изображение|мне|пожалуйста/gi, '').trim();
       const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
-      const replyText = `🎨 Вот твоя картинка по запросу: "${prompt}" (если не загрузилась, обнови страницу)`;
+      const replyText = `🎨 Вот твоя картинка: "${prompt}"`;
       await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, pollUrl] });
       return res.json({ reply: replyText, imageUrl: pollUrl });
     }
 
-    // 2. Генерация ВИДЕО
+    // 2. ГЕНЕРАЦИЯ ВИДЕО
     if (/видео|video/i.test(message || '')) {
       const prompt = message.replace(/видео|video|сгенерируй|создай|сделай/gi, '').trim();
       if (!prompt) return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать.' });
@@ -343,13 +365,13 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
         }
         if (!videoUrl) return res.json({ reply: `🎬 Видео все еще генерируется. Проверь позже: https://apihub.agnes-ai.com/agnesapi?video_id=${videoId}&model_name=agnes-video-2.5-flash` });
         
-        const replyText = `🎬 Вот твое видео по запросу: "${prompt}"`;
+        const replyText = `🎬 Вот твое видео: "${prompt}"`;
         await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, videoUrl] });
         return res.json({ reply: replyText, imageUrl: videoUrl });
       } catch (videoErr) { return res.json({ reply: '🎬 Не удалось сгенерировать видео: ' + videoErr.message }); }
     }
 
-    // 3. ПАМЯТЬ (Улучшенная версия)
+    // 3. ИЗВЛЕЧЕНИЕ ПАМЯТИ (RAG)
     if (message && !imageFile && message.length > 10) {
       try {
         const memoryCheck = await fetchWithRetry('https://api.z.ai/api/paas/v4/chat/completions', {
@@ -358,7 +380,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
           body: JSON.stringify({
             model: 'glm-4.5-flash',
             messages: [
-              { role: 'system', content: 'Ты — эксперт по извлечению информации. Выдели из сообщения пользователя все факты о нем (имя, возраст, город, хобби, любимые вещи). Напиши их через запятую. Если фактов нет, напиши "НЕТ".' },
+              { role: 'system', content: 'Выдели из сообщения факты о пользователе (имя, хобби, предпочтения). Кратко. Если нет — "НЕТ".' },
               { role: 'user', content: message }
             ],
             max_tokens: 100, temperature: 0
@@ -370,17 +392,16 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
         if (fact !== "НЕТ" && fact.length > 3) {
           const userRes = await db.execute({ sql: 'SELECT memory_facts FROM users WHERE id = ?', args: [req.user.id] });
           let currentFacts = userRes.rows[0].memory_facts || '';
-          
           if (!currentFacts.includes(fact)) {
             const newFacts = currentFacts ? currentFacts + '. ' + fact : fact;
             await db.execute({ sql: 'UPDATE users SET memory_facts = ? WHERE id = ?', args: [newFacts, req.user.id] });
-            console.log('🧠 Запомнил факт:', fact); // Это появится в логах Render!
+            console.log('🧠 Запомнил факт:', fact);
           }
         }
       } catch (e) { console.log('Ошибка памяти:', e.message); }
     }
 
-    // 4. ОСНОВНОЙ ЗАПРОС
+    // 4. ЗАПРОС К ТЕКСТОВОЙ МОДЕЛИ
     const historyResult = await db.execute({ sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20', args: [chatId] });
     const history = historyResult.rows.reverse().map(row => ({ role: row.role, content: row.content }));
 
@@ -414,5 +435,6 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
   } catch (error) { res.status(500).json({ error: 'Ошибка: ' + error.message }); }
 });
 
+// Запуск сервера
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🦫 Бобор-AI запущен на порту ${PORT}`));
