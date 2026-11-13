@@ -39,7 +39,6 @@ async function fetchWithRetry(url, options, retries = 3, delay = 3000) {
 
 async function initDB() {
   try {
-    // 1. Создаем базовую таблицу
     await db.execute(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,27 +54,15 @@ async function initDB() {
       )
     `);
     
-    // 2. АВТО-ДОБАВЛЕНИЕ ВСЕХ НУЖНЫХ КОЛОНОК (чтобы не было ошибок)
     try { await db.execute('SELECT memory_facts FROM users LIMIT 1'); } 
     catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE users ADD COLUMN memory_facts TEXT DEFAULT ""'); }
 
     try { await db.execute('SELECT ai_free_left FROM users LIMIT 1'); } 
-    catch (e) { 
-      if (e.message.includes('no such column')) {
-        console.log('⚠️ Добавляем колонку ai_free_left...');
-        await db.execute('ALTER TABLE users ADD COLUMN ai_free_left INTEGER DEFAULT 20');
-      } 
-    }
+    catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE users ADD COLUMN ai_free_left INTEGER DEFAULT 20'); }
 
     try { await db.execute('SELECT ai_sub_until FROM users LIMIT 1'); } 
-    catch (e) { 
-      if (e.message.includes('no such column')) {
-        console.log('⚠️ Добавляем колонку ai_sub_until...');
-        await db.execute('ALTER TABLE users ADD COLUMN ai_sub_until DATETIME DEFAULT NULL');
-      } 
-    }
+    catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE users ADD COLUMN ai_sub_until DATETIME DEFAULT NULL'); }
 
-    // 3. Остальные таблицы
     await db.execute(`CREATE TABLE IF NOT EXISTS bot_knowledge (id INTEGER PRIMARY KEY AUTOINCREMENT, prompt_text TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
     await db.execute(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, pinned INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))`);
     try { await db.execute('SELECT pinned FROM chats LIMIT 1'); } 
@@ -88,7 +75,7 @@ async function initDB() {
       const hash = await bcrypt.hash('1495', 10);
       await db.execute({ sql: 'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)', args: ['hank', adminEmail, hash, 'admin'] });
     }
-    console.log('✅ База данных готова (все колонки на месте)');
+    console.log('✅ База данных готова');
   } catch (err) { console.error('❌ Ошибка БД:', err.message); }
 }
 initDB();
@@ -101,6 +88,7 @@ function authMiddleware(req, res, next) {
   catch (err) { res.status(401).json({ error: 'Неверный токен' }); }
 }
 
+// --- АВТОРИЗАЦИЯ ---
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
@@ -180,6 +168,7 @@ app.get('/api/user/limits', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// --- БАЗА ЗНАНИЙ ---
 app.get('/api/bot/knowledge', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
   try {
@@ -198,6 +187,7 @@ app.post('/api/bot/knowledge', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// --- ЧАТЫ ---
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({ sql: 'SELECT * FROM chats WHERE user_id = ? ORDER BY pinned DESC, created_at DESC', args: [req.user.id] });
@@ -248,12 +238,14 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// --- ОТПРАВКА СООБЩЕНИЙ (С ПРОВЕРКОЙ ЛИМИТОВ) ---
 app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
   const { chatId } = req.params;
   const { message, mode } = req.body; 
   const imageFile = req.file;
 
   try {
+    // ПРОВЕРКА ЛИМИТА
     const userCheck = await db.execute({ sql: 'SELECT ai_free_left, ai_sub_until FROM users WHERE email = ?', args: [req.user.email] });
     const userData = userCheck.rows[0];
     
@@ -282,6 +274,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
     }
 
+    // 1. ГЕНЕРАЦИЯ КАРТИНКИ
     const isDrawRequest = /нарисуй|сгенерируй|покажи картинку|создай изображение/i.test(message || '');
     if (isDrawRequest && !imageFile) {
       const prompt = message.replace(/нарисуй|сгенерируй|покажи картинку|создай изображение|мне|пожалуйста/gi, '').trim();
@@ -291,6 +284,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       return res.json({ reply: replyText, imageUrl: pollUrl });
     }
 
+    // 2. ГЕНЕРАЦИЯ ВИДЕО
     if (/видео|video/i.test(message || '')) {
       const prompt = message.replace(/видео|video|сгенерируй|создай|сделай/gi, '').trim();
       if (!prompt) return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать.' });
@@ -325,6 +319,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       } catch (videoErr) { return res.json({ reply: '🎬 Не удалось сгенерировать видео: ' + videoErr.message }); }
     }
 
+    // 3. ПАМЯТЬ (RAG)
     if (message && !imageFile && message.length > 10) {
       try {
         const memoryCheck = await fetchWithRetry('https://api.z.ai/api/paas/v4/chat/completions', {
@@ -354,6 +349,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       } catch (e) { console.log('Ошибка памяти:', e.message); }
     }
 
+    // 4. ТЕКСТОВЫЙ ОТВЕТ
     const historyResult = await db.execute({ sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20', args: [chatId] });
     const history = historyResult.rows.reverse().map(row => ({ role: row.role, content: row.content }));
 
