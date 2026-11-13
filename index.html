@@ -72,6 +72,7 @@
   .chat-item .chat-menu { display: none; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 0 5px; }
   .chat-item:hover .chat-menu { display: block; }
   
+  /* ИСПРАВЛЕНО: Классы меню чата */
   .chat-menu-dropdown { position: fixed; background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000; min-width: 140px; }
   .chat-menu-dropdown div { padding: 10px 15px; cursor: pointer; font-size: 13px; color: var(--text-main); }
   .chat-menu-dropdown div:hover { background: var(--border); }
@@ -389,16 +390,34 @@
   function closeSettings() { document.getElementById('settingsModal').style.display = 'none'; }
   async function saveSettings() { const newNick = document.getElementById('settingNickname').value; const newTheme = document.getElementById('settingTheme').value; const res = await fetch('/api/user/settings', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ username: newNick, theme: newTheme, language: 'ru' }) }); const data = await res.json(); if (res.ok) { localStorage.setItem('token', data.token); localStorage.setItem('username', data.username); localStorage.setItem('theme', data.theme); location.reload(); } else { alert(data.error); } }
 
+  // ИСПРАВЛЕНО: Теперь используется createElement (без багов с кавычками в названиях)
   async function loadChats() {
     const res = await fetch('/api/chats', { headers: { 'Authorization': `Bearer ${token}` } });
     const chats = await res.json();
     const list = document.getElementById('chatList');
     list.innerHTML = '';
+    
     chats.forEach(chat => {
       const div = document.createElement('div');
       div.className = 'chat-item' + (chat.id === currentChatId ? ' active' : '') + (chat.pinned ? ' pinned' : '');
-      div.innerHTML = `<span onclick="openChat(${chat.id})" style="flex:1; overflow:hidden; text-overflow:ellipsis;">${chat.title || 'Без названия'}</span>
-                       <button class="chat-menu" onclick="event.stopPropagation(); showChatMenu(event, ${chat.id}, '${chat.title}', ${chat.pinned})">⋮</button>`;
+      
+      const titleSpan = document.createElement('span');
+      titleSpan.style.flex = '1';
+      titleSpan.style.overflow = 'hidden';
+      titleSpan.style.textOverflow = 'ellipsis';
+      titleSpan.textContent = chat.title || 'Без названия';
+      titleSpan.onclick = () => openChat(chat.id);
+      
+      const menuBtn = document.createElement('button');
+      menuBtn.className = 'chat-menu';
+      menuBtn.textContent = '⋮';
+      menuBtn.onclick = (e) => {
+        e.stopPropagation();
+        showChatMenu(e, chat.id, chat.title, chat.pinned);
+      };
+      
+      div.appendChild(titleSpan);
+      div.appendChild(menuBtn);
       list.appendChild(div);
     });
   }
@@ -411,12 +430,25 @@
     menu.className = 'chat-menu-dropdown';
     menu.style.top = event.pageY + 'px';
     menu.style.left = event.pageX + 'px';
-    menu.innerHTML = `
-      <div onclick="renameChat(${chatId}, '${title}')">Переименовать</div>
-      <div onclick="togglePin(${chatId})">${pinned ? 'Открепить' : 'Закрепить'}</div>
-      <div class="danger" onclick="deleteChat(${chatId})">Удалить</div>
-    `;
+    
+    const renameDiv = document.createElement('div');
+    renameDiv.textContent = 'Переименовать';
+    renameDiv.onclick = () => renameChat(chatId, title);
+    
+    const pinDiv = document.createElement('div');
+    pinDiv.textContent = pinned ? 'Открепить' : 'Закрепить';
+    pinDiv.onclick = () => togglePin(chatId);
+    
+    const delDiv = document.createElement('div');
+    delDiv.className = 'danger';
+    delDiv.textContent = 'Удалить';
+    delDiv.onclick = () => deleteChat(chatId);
+
+    menu.appendChild(renameDiv);
+    menu.appendChild(pinDiv);
+    menu.appendChild(delDiv);
     document.body.appendChild(menu);
+    
     setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 10);
   }
 
