@@ -10,7 +10,6 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
 
-// Настройка Multer для загрузки картинок в память
 const upload = multer({ storage: multer.memoryStorage() });
 
 // --- НАСТРОЙКА TURSO ---
@@ -21,7 +20,6 @@ const db = createClient({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bobor-super-secret-key-123';
 
-// --- АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ТАБЛИЦ ---
 async function initDB() {
   try {
     await db.execute(`
@@ -60,11 +58,9 @@ async function initDB() {
 }
 initDB();
 
-// --- MIDDLEWARE ---
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Нет токена' });
-
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -75,17 +71,14 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// --- РЕГИСТРАЦИЯ ---
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
-
   try {
     const hash = await bcrypt.hash(password, 10);
     const countRes = await db.execute('SELECT COUNT(*) as count FROM users');
     const isFirst = countRes.rows[0].count === 0;
     const role = isFirst ? 'admin' : 'user';
-
     await db.execute({
       sql: 'INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)',
       args: [username, hash, role]
@@ -97,7 +90,6 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// --- ЛОГИН ---
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -107,10 +99,8 @@ app.post('/api/login', async (req, res) => {
     });
     const user = result.rows[0];
     if (!user) return res.status(401).json({ error: 'Неверный логин или пароль' });
-
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Неверный логин или пароль' });
-
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, role: user.role });
   } catch (err) {
@@ -118,7 +108,6 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// --- СПИСОК ЧАТОВ ---
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({
@@ -131,7 +120,6 @@ app.get('/api/chats', authMiddleware, async (req, res) => {
   }
 });
 
-// --- СОЗДАТЬ ЧАТ ---
 app.post('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({
@@ -144,7 +132,6 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
   }
 });
 
-// --- ИСТОРИЯ ЧАТА ---
 app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
@@ -153,7 +140,6 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
       args: [chatId, req.user.id]
     });
     if (chatCheck.rows.length === 0) return res.status(403).json({ error: 'Доступ запрещён' });
-
     const result = await db.execute({
       sql: 'SELECT role, content, image_url FROM messages WHERE chat_id = ? ORDER BY id ASC',
       args: [chatId]
@@ -176,16 +162,14 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
 
     if (imageFile) {
       imageBase64 = `data:${imageFile.mimetype};base64,${imageFile.buffer.toString('base64')}`;
-      imageUrlInDB = "Прикреплено фото"; // Фронтенд не будет показывать эту строку как URL
+      imageUrlInDB = "Прикреплено фото";
     }
 
-    // 1. Сохраняем вопрос пользователя
     await db.execute({
       sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)',
       args: [chatId, 'user', message || 'Отправил(а) фото', imageUrlInDB]
     });
 
-    // Обновляем название чата
     const countMsg = await db.execute({
       sql: 'SELECT COUNT(*) as count FROM messages WHERE chat_id = ?',
       args: [chatId]
@@ -198,24 +182,20 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       });
     }
 
-    // 2. Генерация картинки, если просят нарисовать
+    // 1. Генерация картинки через Pollinations
     const isDrawRequest = /нарисуй|сгенерируй|покажи картинку|создай изображение/i.test(message || '');
-
     if (isDrawRequest && !imageFile) {
       const prompt = message.replace(/нарисуй|сгенерируй|покажи картинку|создай изображение/gi, '').trim();
       const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true`;
-      
       const replyText = `🎨 Вот твоя картинка по запросу: "${prompt}"`;
-      
       await db.execute({
         sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)',
         args: [chatId, 'assistant', replyText, pollUrl]
       });
-
       return res.json({ reply: replyText, imageUrl: pollUrl });
     }
 
-    // 3. Обычный запрос к DeepSeek (с фото или без)
+    // 2. Запрос к ModelScope (Бесплатный API)
     const historyResult = await db.execute({
       sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20',
       args: [chatId]
@@ -239,23 +219,27 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       ...history
     ];
 
-    let model = 'deepseek-chat';
+    let model = 'deepseek-ai/DeepSeek-V3'; // Бесплатная модель ModelScope
     let maxTokens = 1000;
     
     if (imageFile) {
-      model = 'deepseek-vl'; // Модель для зрения
-    } else if (mode === 'weak') {
-      maxTokens = 300;
-    } else if (mode === 'strong') {
-      model = 'deepseek-reasoner'; 
-      maxTokens = 2000;
+      // Если пользователь кинул фото, возвращаем заглушку (ModelScope DeepSeek-V3 не видит фото)
+      await db.execute({
+        sql: 'INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)',
+        args: [chatId, 'assistant', 'Мои нейроны пока не научились видеть картинки. Но ты можешь попросить меня: "Нарисуй бобра!" 🦫']
+      });
+      return res.json({ reply: 'Мои нейроны пока не научились видеть картинки. Но ты можешь попросить меня: "Нарисуй бобра!" 🦫' });
     }
 
-    const aiResponse = await fetch('https://api.deepseek.com/chat/completions', {
+    if (mode === 'weak') maxTokens = 300;
+    else if (mode === 'strong') maxTokens = 2000;
+
+    // Вызов ModelScope
+    const aiResponse = await fetch('https://api-inference.modelscope.cn/v1/chat/completions', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
+        'Authorization': `Bearer ${process.env.MODELSCOPE_API_KEY}`
       },
       body: JSON.stringify({
         model: model,
