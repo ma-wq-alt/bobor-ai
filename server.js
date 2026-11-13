@@ -232,7 +232,7 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ОТПРАВКА СООБЩЕНИЙ (С ПАМЯТЬЮ, ФОТО И ВИДЕО) ---
+// --- ОТПРАВКА СООБЩЕНИЙ ---
 app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
   const { chatId } = req.params;
   const { message, mode } = req.body; 
@@ -255,13 +255,21 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
     }
 
-    // 1. Генерация КАРТИНКИ
+    // 1. Генерация КАРТИНКИ (ВЫСОКОЕ КАЧЕСТВО)
     const isDrawRequest = /нарисуй|сгенерируй|покажи картинку|создай изображение/i.test(message || '');
     if (isDrawRequest && !imageFile) {
-      const prompt = message.replace(/нарисуй|сгенерируй|покажи картинку|создай изображение/gi, '').trim();
-      const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true`;
-      const replyText = `🎨 Вот твоя картинка по запросу: "${prompt}"`;
-      await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, pollUrl] });
+      const prompt = message.replace(/нарисуй|сгенерируй|покажи картинку|создай изображение|мне|пожалуйста/gi, '').trim();
+      
+      // УВЕЛИЧЕНО РАЗРЕШЕНИЕ И ДОБАВЛЕНО УЛУЧШЕНИЕ КАЧЕСТВА
+      const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
+      
+      const replyText = `🎨 Вот твоя картинка по запросу: "${prompt}" (если картинка не загрузилась, подожди пару секунд и обнови страницу)`;
+      
+      await db.execute({ 
+        sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', 
+        args: [chatId, 'assistant', replyText, pollUrl] 
+      });
+      
       return res.json({ reply: replyText, imageUrl: pollUrl });
     }
 
@@ -300,7 +308,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       } catch (videoErr) { return res.json({ reply: '🎬 Не удалось сгенерировать видео: ' + videoErr.message }); }
     }
 
-    // 3. ИЗВЛЕЧЕНИЕ ПАМЯТИ (НОВОЕ!)
+    // 3. ИЗВЛЕЧЕНИЕ ПАМЯТИ
     if (message && !imageFile) {
       try {
         const memoryCheck = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
