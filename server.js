@@ -30,14 +30,11 @@ const transporter = nodemailer.createTransport({
 
 async function initDB() {
   try {
-    // --- УМНАЯ ПРОВЕРКА: Есть ли колонка email? ---
-    try {
-      // Пытаемся сделать запрос. Если колонки нет, выскочит ошибка.
-      await db.execute('SELECT email FROM users LIMIT 1');
-    } catch (e) {
-      // Если ошибка "no such column", значит таблица старая. Удаляем её.
+    // Авто-обновление старой базы
+    try { await db.execute('SELECT theme FROM users LIMIT 1'); } 
+    catch (e) {
       if (e.message.includes('no such column') || e.message.includes('no such table')) {
-        console.log('⚠️ Обнаружена старая таблица users. Обновляем структуру...');
+        console.log('⚠️ Обновляем структуру базы для настроек...');
         await db.execute('DROP TABLE IF EXISTS users');
       }
     }
@@ -51,6 +48,8 @@ async function initDB() {
         role TEXT DEFAULT 'user',
         otp_code TEXT,
         otp_expires DATETIME,
+        theme TEXT DEFAULT 'dark',
+        language TEXT DEFAULT 'ru',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -84,10 +83,7 @@ async function initDB() {
         args: ['hank', adminEmail, hash, 'admin']
       });
       console.log('✅ Админский аккаунт (hank) создан автоматически');
-    } else {
-      await db.execute({ sql: 'UPDATE users SET role = ? WHERE email = ?', args: ['admin', adminEmail] });
     }
-    
     console.log('✅ База данных инициализирована');
   } catch (err) {
     console.error('❌ Ошибка инициализации БД:', err.message);
@@ -121,8 +117,8 @@ app.post('/api/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Неверный логин или пароль' });
     
-    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, username: user.username, role: user.role });
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, username: user.username, role: user.role, theme: user.theme || 'dark', language: user.language || 'ru' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -195,9 +191,27 @@ app.post('/api/verify-code', async (req, res) => {
 
     await db.execute({ sql: 'UPDATE users SET otp_code = NULL, otp_expires = NULL WHERE id = ?', args: [user.id] });
 
-    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, username: user.username, role: user.role });
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, username: user.username, role: user.role, theme: user.theme || 'dark', language: user.language || 'ru' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- СОХРАНЕНИЕ НАСТРОЕК (ТЕМА, ЯЗЫК, НИК) ---
+app.post('/api/user/settings', authMiddleware, async (req, res) => {
+  const { username, theme, language } = req.body;
+  try {
+    await db.execute({
+      sql: 'UPDATE users SET username = ?, theme = ?, language = ? WHERE id = ?',
+      args: [username, theme, language, req.user.id]
+    });
+    
+    // Обновляем токен, так как изменился ник
+    const newToken = jwt.sign({ id: req.user.id, username, role: req.user.role, theme, language }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ success: true, token: newToken, username, theme, language });
+  } catch (err) {
+    if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'Этот ник уже занят' });
     res.status(500).json({ error: err.message });
   }
 });
