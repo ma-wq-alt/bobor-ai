@@ -22,12 +22,11 @@ const db = createClient({
 const JWT_SECRET = process.env.JWT_SECRET || 'bobor-super-secret-key-123';
 
 // --- НАСТРОЙКА ПОЧТЫ (Для кодов) ---
-// Внимание: в Render нужно будет добавить EMAIL_USER и EMAIL_PASS
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER || 'твой_емейл@gmail.com', // Сюда впишешь почту, с которой будут уходить коды
-    pass: process.env.EMAIL_PASS || 'пароль_приложения' // Сюда пароль приложения от гугла
+    user: process.env.EMAIL_USER || '', 
+    pass: process.env.EMAIL_PASS || '' 
   }
 });
 
@@ -45,7 +44,6 @@ async function initDB() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    // Создаем остальные таблицы (чаты и сообщения)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS chats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,7 +77,13 @@ async function initDB() {
         sql: 'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)',
         args: ['hank', adminEmail, hash, 'admin']
       });
-      console.log('✅ Админский аккаунт создан автоматически');
+      console.log('✅ Админский аккаунт (hank) создан автоматически');
+    } else {
+      // Обновляем роль на всякий случай
+      await db.execute({
+        sql: 'UPDATE users SET role = ? WHERE email = ?',
+        args: ['admin', adminEmail]
+      });
     }
     
     console.log('✅ База данных инициализирована');
@@ -109,7 +113,6 @@ app.post('/api/register', async (req, res) => {
   try {
     const hash = await bcrypt.hash(password, 10);
     
-    // Проверяем, не занят ли ник или почта
     const check = await db.execute({
       sql: 'SELECT id FROM users WHERE username = ? OR email = ?',
       args: [username, email || '']
@@ -156,11 +159,9 @@ app.post('/api/send-code', async (req, res) => {
   if (!email) return res.status(400).json({ error: 'Введите почту' });
 
   try {
-    // Генерируем 6-значный код
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expires = new Date(Date.now() + 10 * 60000).toISOString(); // Код живет 10 минут
+    const expires = new Date(Date.now() + 10 * 60000).toISOString(); 
 
-    // Ищем юзера, если нет - создаем нового
     let userRes = await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] });
     let user = userRes.rows[0];
 
@@ -177,7 +178,7 @@ app.post('/api/send-code', async (req, res) => {
       });
     }
 
-    // Отправляем письмо
+    // Пытаемся отправить на почту, если настроены переменные
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       await transporter.sendMail({
         from: '"БОБОР-AI" <' + process.env.EMAIL_USER + '>',
@@ -188,9 +189,11 @@ app.post('/api/send-code', async (req, res) => {
       });
       res.json({ success: true, message: 'Код отправлен на почту!' });
     } else {
-      // Если почта не настроена в Render, выводим код в логи (для теста)
-      console.log(`[ТЕСТ] Код для ${email}: ${otp}`);
-      res.json({ success: true, message: 'Код отправлен (смотри логи сервера, почта не настроена)' });
+      // Если почта не настроена, выводим код в консоль Render
+      console.log(`\n\n========================================`);
+      console.log(`[ТЕСТ] Код для входа ${email}: ${otp}`);
+      console.log(`========================================\n\n`);
+      res.json({ success: true, message: 'Код сгенерирован! Проверьте логи (Logs) на Render.' });
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -209,7 +212,6 @@ app.post('/api/verify-code', async (req, res) => {
     const now = new Date().toISOString();
     if (now > user.otp_expires) return res.status(401).json({ error: 'Код истек' });
 
-    // Сбрасываем код после успешного входа
     await db.execute({ sql: 'UPDATE users SET otp_code = NULL, otp_expires = NULL WHERE id = ?', args: [user.id] });
 
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
@@ -219,7 +221,7 @@ app.post('/api/verify-code', async (req, res) => {
   }
 });
 
-// ... (КОД ЧАТОВ И СООБЩЕНИЙ ОСТАЕТСЯ БЕЗ ИЗМЕНЕНИЙ) ...
+// --- ЧАТЫ И СООБЩЕНИЯ ---
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({
