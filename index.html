@@ -4,11 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БОБОР-AI</title>
-<!-- Шрифт Inter -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<!-- Библиотека для парсинга Markdown (звездочек, решеток) -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
 <style>
   :root {
     --bg-main: #0b0f19;
@@ -55,6 +52,7 @@
   .auth-box input:focus { border-color: var(--primary); }
   .auth-box button { width: 100%; padding: 14px; background: var(--primary); border: none; border-radius: 12px; color: #fff; font-weight: 600; font-size: 15px; cursor: pointer; margin-bottom: 10px; }
   .auth-msg { font-size: 14px; color: var(--danger); margin-top: 10px; min-height: 20px; }
+  .timer-text { font-size: 12px; color: var(--text-muted); margin-top: 5px; }
 
   /* ОСНОВНОЙ ИНТЕРФЕЙС */
   #main-app { display: none; width: 100%; height: 100vh; }
@@ -67,10 +65,18 @@
   .btn-train.trained { background: var(--success); color: #fff; border-color: var(--success); }
   
   .chat-list { flex: 1; overflow-y: auto; padding: 0 10px 10px 10px; }
-  .chat-item { padding: 12px 14px; margin-bottom: 4px; border-radius: 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); font-size: 14px; }
+  .chat-item { padding: 12px 14px; margin-bottom: 4px; border-radius: 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); font-size: 14px; display: flex; justify-content: space-between; align-items: center; position: relative; }
   .chat-item:hover { background: var(--border); color: var(--text-main); }
   .chat-item.active { background: var(--primary-glow); color: var(--primary); font-weight: 500; }
+  .chat-item.pinned { border-left: 3px solid var(--primary); }
+  .chat-item .chat-menu { display: none; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 0 5px; }
+  .chat-item:hover .chat-menu { display: block; }
   
+  .chat-menu-dropdown { position: fixed; background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000; min-width: 140px; }
+  .chat-menu-dropdown div { padding: 10px 15px; cursor: pointer; font-size: 13px; color: var(--text-main); }
+  .chat-menu-dropdown div:hover { background: var(--border); }
+  .chat-menu-dropdown .danger { color: var(--danger); }
+
   .user-info { padding: 15px; border-top: 1px solid var(--border); background: var(--sidebar-bg); }
   .user-name { font-weight: 600; font-size: 14px; margin-bottom: 10px; }
   .user-actions { display: flex; gap: 8px; }
@@ -95,14 +101,11 @@
   .msg-row.user { flex-direction: row-reverse; }
   .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 14px; font-weight: 600; flex-shrink: 0; background: var(--border); color: var(--text-main); }
   .msg-row.bot .avatar { background: var(--primary); color: #fff; }
-  
-  /* Увеличенная ширина бабблов для длинных текстов */
   .msg-content { padding: 12px 18px; border-radius: 16px; line-height: 1.6; font-size: 15px; max-width: 85%; word-wrap: break-word; overflow-wrap: break-word; }
   .msg-row.bot .msg-content { background: var(--msg-bot-bg); border-top-left-radius: 4px; }
   .msg-row.user .msg-content { background: var(--msg-user-bg); color: #fff; border-top-right-radius: 4px; }
   .msg-content img, .msg-content video { max-width: 100%; border-radius: 12px; margin-top: 10px; display: block; }
   
-  /* Стили для Markdown (жирный шрифт, списки, код) */
   .msg-content p { margin-bottom: 8px; }
   .msg-content p:last-child { margin-bottom: 0; }
   .msg-content strong { font-weight: 700; color: var(--primary); }
@@ -111,8 +114,8 @@
   .msg-content li { margin-bottom: 4px; }
   .msg-content code { background: rgba(0,0,0,0.2); padding: 2px 4px; border-radius: 4px; font-family: monospace; font-size: 14px; }
   
-  .copy-btn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; margin-top: 8px; float: right; }
-  .copy-btn:hover { background: var(--border); color: var(--text-main); }
+  .copy-btn, .edit-btn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; margin-top: 8px; margin-right: 5px; float: right; }
+  .copy-btn:hover, .edit-btn:hover { background: var(--border); color: var(--text-main); }
 
   .typing-indicator { display: flex; gap: 4px; padding: 12px 18px; background: var(--msg-bot-bg); border-radius: 16px; border-top-left-radius: 4px; width: fit-content; align-items: center; }
   .typing-indicator span { width: 6px; height: 6px; background: var(--text-muted); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
@@ -120,6 +123,7 @@
   .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
   @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
 
+  /* ПАНЕЛЬ ВВОДА */
   .input-panel { padding: 20px 10% 30px; background: linear-gradient(to top, var(--chat-bg) 70%, transparent); }
   .mode-selector { display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; }
   .mode-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--sidebar-bg); color: var(--text-muted); cursor: pointer; font-size: 12px; font-weight: 500; }
@@ -134,6 +138,7 @@
   .btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-attach { background: transparent; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 0 10px; display: flex; align-items: center; }
   .btn-attach:hover { color: var(--text-main); }
+  .stop-btn { background: var(--danger); color: #fff; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 14px; margin: 10px auto; display: none; width: fit-content; }
 
   /* МОДАЛЬНЫЕ ОКНА */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: none; justify-content: center; align-items: center; z-index: 1000; }
@@ -148,7 +153,7 @@
   .btn-cancel { background: var(--border); color: var(--text-main); }
   .btn-save { background: var(--primary); color: #fff; }
 
-  /* Меню 3 точки */
+  /* Меню 3 точки (настройки) */
   .dropdown { position: relative; display: inline-block; }
   .dropdown-content { display: none; position: absolute; right: 0; top: 100%; background: var(--sidebar-bg); min-width: 160px; box-shadow: 0 8px 16px rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border); z-index: 10; overflow: hidden; }
   .dropdown-content a { color: var(--text-main); padding: 12px 16px; text-decoration: none; display: block; font-size: 14px; cursor: pointer; }
@@ -179,6 +184,7 @@
       <div id="codeBlock" style="display: none; margin-top: 15px;">
         <input type="text" id="codeInput" placeholder="Код" style="text-align: center; letter-spacing: 5px; font-size: 20px;">
         <button onclick="verifyCode()">Войти</button>
+        <div id="timerText" class="timer-text"></div>
       </div>
     </div>
     <p id="authMsg" class="auth-msg"></p>
@@ -250,10 +256,11 @@
       </div>
       <div class="input-row">
         <input type="file" id="fileInput" accept="image/*" style="display: none;" onchange="handleFileSelect(event)">
-        <button class="btn-attach" onclick="document.getElementById('fileInput').click()">Прикрепить</button>
+        <button class="btn-attach" onclick="document.getElementById('fileInput').click()">📎</button>
         <input type="text" id="messageInput" placeholder="Напиши сообщение..." onkeydown="if(event.key==='Enter') sendMessage()">
         <button class="btn-send" id="btnSend" onclick="sendMessage()">➤</button>
       </div>
+      <button class="stop-btn" id="stopBtn" onclick="stopGeneration()">Остановить</button>
     </div>
   </div>
 </div>
@@ -263,10 +270,11 @@
   let currentUser = localStorage.getItem('username');
   let currentRole = localStorage.getItem('role');
   let currentTheme = localStorage.getItem('theme') || 'dark';
-  let currentLang = localStorage.getItem('language') || 'ru';
   let currentChatId = null;
   let currentMode = 'normal';
   let selectedFile = null;
+  let abortController = null;
+  let codeTimerInterval = null;
 
   if (currentTheme === 'light') document.body.classList.add('light-theme');
 
@@ -295,16 +303,37 @@
     } else { document.getElementById('authMsg').textContent = data.error; }
   }
 
+  function startCodeTimer() {
+    let seconds = 60;
+    const btn = document.getElementById('btnRequest');
+    const timerText = document.getElementById('timerText');
+    btn.disabled = true;
+    btn.textContent = 'Отправлено';
+    timerText.textContent = `Повторно через ${seconds} сек.`;
+    
+    if (codeTimerInterval) clearInterval(codeTimerInterval);
+    codeTimerInterval = setInterval(() => {
+      seconds--;
+      timerText.textContent = `Повторно через ${seconds} сек.`;
+      if (seconds <= 0) {
+        clearInterval(codeTimerInterval);
+        btn.disabled = false;
+        btn.textContent = 'Получить код';
+        timerText.textContent = '';
+      }
+    }, 1000);
+  }
+
   async function requestCode() {
     const email = document.getElementById('emailInput').value;
     if (!email) return document.getElementById('authMsg').textContent = 'Введите почту';
     const res = await fetch('/api/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
     const data = await res.json();
     if (res.ok) {
-      document.getElementById('btnRequest').style.display = 'none';
       document.getElementById('codeBlock').style.display = 'block';
       document.getElementById('authMsg').style.color = 'var(--success)';
       document.getElementById('authMsg').textContent = data.message;
+      startCodeTimer();
     } else { 
       document.getElementById('authMsg').style.color = 'var(--danger)';
       document.getElementById('authMsg').textContent = data.error; 
@@ -332,7 +361,6 @@
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('main-app').style.display = 'flex';
     document.getElementById('currentUser').textContent = currentUser + (currentRole === 'admin' ? ' (Админ)' : '');
-    
     if (currentRole === 'admin') {
       document.getElementById('btnTrain').style.display = 'block';
       checkTrainStatus();
@@ -342,7 +370,6 @@
 
   if (token) initApp();
 
-  // --- ОБУЧЕНИЕ ---
   async function checkTrainStatus() {
     const res = await fetch('/api/bot/knowledge', { headers: { 'Authorization': `Bearer ${token}` } });
     const data = await res.json();
@@ -355,48 +382,14 @@
     }
   }
 
-  function openTrain() {
-    fetch('/api/bot/knowledge', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(data => {
-        document.getElementById('trainPrompt').value = data.prompt || '';
-        document.getElementById('trainModal').style.display = 'flex';
-      });
-  }
-
+  function openTrain() { fetch('/api/bot/knowledge', { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()).then(data => { document.getElementById('trainPrompt').value = data.prompt || ''; document.getElementById('trainModal').style.display = 'flex'; }); }
   function closeTrain() { document.getElementById('trainModal').style.display = 'none'; }
+  async function saveTrain() { const prompt = document.getElementById('trainPrompt').value; const res = await fetch('/api/bot/knowledge', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ prompt }) }); if (res.ok) { alert('Бобор обучен!'); closeTrain(); checkTrainStatus(); } }
 
-  async function saveTrain() {
-    const prompt = document.getElementById('trainPrompt').value;
-    const res = await fetch('/api/bot/knowledge', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ prompt }) });
-    if (res.ok) {
-      alert('Бобор обучен новым знаниям!');
-      closeTrain();
-      checkTrainStatus();
-    } else { alert('Ошибка обучения'); }
-  }
-
-  // --- НАСТРОЙКИ ---
-  function openSettings() {
-    document.getElementById('settingNickname').value = currentUser;
-    document.getElementById('settingTheme').value = currentTheme;
-    document.getElementById('settingLanguage').value = currentLang;
-    document.getElementById('settingsModal').style.display = 'flex';
-  }
+  function openSettings() { document.getElementById('settingNickname').value = currentUser; document.getElementById('settingTheme').value = currentTheme; document.getElementById('settingsModal').style.display = 'flex'; }
   function closeSettings() { document.getElementById('settingsModal').style.display = 'none'; }
-  async function saveSettings() {
-    const newNick = document.getElementById('settingNickname').value;
-    const newTheme = document.getElementById('settingTheme').value;
-    const newLang = document.getElementById('settingLanguage').value;
-    const res = await fetch('/api/user/settings', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ username: newNick, theme: newTheme, language: newLang }) });
-    const data = await res.json();
-    if (res.ok) {
-      localStorage.setItem('token', data.token); localStorage.setItem('username', data.username); localStorage.setItem('theme', data.theme); localStorage.setItem('language', data.language);
-      location.reload();
-    } else { alert(data.error); }
-  }
+  async function saveSettings() { const newNick = document.getElementById('settingNickname').value; const newTheme = document.getElementById('settingTheme').value; const res = await fetch('/api/user/settings', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ username: newNick, theme: newTheme, language: 'ru' }) }); const data = await res.json(); if (res.ok) { localStorage.setItem('token', data.token); localStorage.setItem('username', data.username); localStorage.setItem('theme', data.theme); location.reload(); } else { alert(data.error); } }
 
-  // --- ЧАТЫ ---
   async function loadChats() {
     const res = await fetch('/api/chats', { headers: { 'Authorization': `Bearer ${token}` } });
     const chats = await res.json();
@@ -404,22 +397,56 @@
     list.innerHTML = '';
     chats.forEach(chat => {
       const div = document.createElement('div');
-      div.className = 'chat-item' + (chat.id === currentChatId ? ' active' : '');
-      div.textContent = chat.title || 'Без названия';
-      div.onclick = () => openChat(chat.id);
+      div.className = 'chat-item' + (chat.id === currentChatId ? ' active' : '') + (chat.pinned ? ' pinned' : '');
+      div.innerHTML = `<span onclick="openChat(${chat.id})" style="flex:1; overflow:hidden; text-overflow:ellipsis;">${chat.title || 'Без названия'}</span>
+                       <button class="chat-menu" onclick="event.stopPropagation(); showChatMenu(event, ${chat.id}, '${chat.title}', ${chat.pinned})">⋮</button>`;
       list.appendChild(div);
     });
+  }
+
+  function showChatMenu(event, chatId, title, pinned) {
+    const existing = document.querySelector('.chat-menu-dropdown');
+    if (existing) existing.remove();
+    
+    const menu = document.createElement('div');
+    menu.className = 'chat-menu-dropdown';
+    menu.style.top = event.pageY + 'px';
+    menu.style.left = event.pageX + 'px';
+    menu.innerHTML = `
+      <div onclick="renameChat(${chatId}, '${title}')">Переименовать</div>
+      <div onclick="togglePin(${chatId})">${pinned ? 'Открепить' : 'Закрепить'}</div>
+      <div class="danger" onclick="deleteChat(${chatId})">Удалить</div>
+    `;
+    document.body.appendChild(menu);
+    setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 10);
+  }
+
+  async function renameChat(chatId, oldTitle) {
+    const newTitle = prompt('Новое название чата:', oldTitle);
+    if (newTitle && newTitle !== oldTitle) {
+      await fetch(`/api/chats/${chatId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ title: newTitle }) });
+      loadChats();
+    }
+  }
+
+  async function deleteChat(chatId) {
+    if (confirm('Удалить этот чат навсегда?')) {
+      await fetch(`/api/chats/${chatId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+      if (currentChatId === chatId) { currentChatId = null; document.getElementById('messages').innerHTML = ''; }
+      loadChats();
+    }
+  }
+
+  async function togglePin(chatId) {
+    await fetch(`/api/chats/${chatId}/pin`, { method: 'PUT', headers: { 'Authorization': `Bearer ${token}` } });
+    loadChats();
   }
 
   async function createNewChat() {
     const res = await fetch('/api/chats', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
     const data = await res.json();
     currentChatId = data.chatId; loadChats();
-    document.getElementById('messages').innerHTML = `
-      <div class="msg-row bot">
-        <div class="avatar">AI</div>
-        <div class="msg-content">Привет! Я Бобор-AI. Чем могу помочь?</div>
-      </div>`;
+    document.getElementById('messages').innerHTML = `<div class="msg-row bot"><div class="avatar">AI</div><div class="msg-content">Привет! Я Бобор-AI.</div></div>`;
   }
 
   async function openChat(chatId) {
@@ -431,26 +458,15 @@
     container.scrollTop = container.scrollHeight;
   }
 
-  function setMode(mode) {
-    currentMode = mode;
-    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-    document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
-  }
-
-  function handleFileSelect(event) {
-    selectedFile = event.target.files[0];
-    if (selectedFile) {
-      document.getElementById('messageInput').placeholder = `Выбрано: ${selectedFile.name}`;
-      document.getElementById('messageInput').focus();
-    }
-  }
+  function setMode(mode) { currentMode = mode; document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active')); document.querySelector(`[data-mode="${mode}"]`).classList.add('active'); }
+  function handleFileSelect(event) { selectedFile = event.target.files[0]; if (selectedFile) document.getElementById('messageInput').placeholder = `Выбрано: ${selectedFile.name}`; }
 
   async function sendMessage() {
     const input = document.getElementById('messageInput');
     const text = input.value.trim();
     if ((!text && !selectedFile) || !currentChatId) return;
 
-    addMessageToUI(text || 'Фото', 'user');
+        addMessageToUI(text || 'Фото', 'user');
     
     const formData = new FormData();
     formData.append('message', text); formData.append('mode', currentMode);
@@ -461,20 +477,36 @@
 
     showTypingIndicator();
     document.getElementById('btnSend').disabled = true;
+    document.getElementById('stopBtn').style.display = 'block';
+
+    abortController = new AbortController();
 
     try {
-      const res = await fetch(`/api/chats/${currentChatId}/message`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData });
+      const res = await fetch(`/api/chats/${currentChatId}/message`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData,
+        signal: abortController.signal
+      });
       const data = await res.json();
       removeTypingIndicator();
       document.getElementById('btnSend').disabled = false;
+      document.getElementById('stopBtn').style.display = 'none';
 
       if (res.ok) { addMessageToUI(data.reply, 'bot', data.imageUrl); loadChats(); } 
       else { addMessageToUI('Ошибка: ' + data.error, 'bot'); }
     } catch (err) { 
+      if (err.name === 'AbortError') {
+        addMessageToUI('Генерация остановлена.', 'bot');
+      } else {
+        addMessageToUI('Ошибка соединения', 'bot'); 
+      }
       removeTypingIndicator();
       document.getElementById('btnSend').disabled = false;
-      addMessageToUI('Ошибка соединения', 'bot'); 
+      document.getElementById('stopBtn').style.display = 'none';
     }
+  }
+
+  function stopGeneration() {
+    if (abortController) abortController.abort();
   }
 
   function showTypingIndicator() {
@@ -486,10 +518,7 @@
     container.scrollTop = container.scrollHeight;
   }
 
-  function removeTypingIndicator() {
-    const row = document.getElementById('typing-row');
-    if (row) row.remove();
-  }
+  function removeTypingIndicator() { const row = document.getElementById('typing-row'); if (row) row.remove(); }
 
   function addMessageToUI(text, sender, imageUrl = null) {
     const container = document.getElementById('messages');
@@ -498,39 +527,28 @@
     const content = document.createElement('div'); content.className = 'msg-content';
     
     if (text) {
-      const textNode = document.createElement('div');
-      // ИСПОЛЬЗУЕМ MARKED ДЛЯ ПАРСИНГА MARKDOWN
-      textNode.innerHTML = marked.parse(text);
-      content.appendChild(textNode);
-      
+      const textNode = document.createElement('div'); textNode.innerHTML = marked.parse(text); content.appendChild(textNode);
       if (sender === 'bot') {
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'copy-btn'; copyBtn.textContent = 'Копировать';
-        copyBtn.onclick = () => {
-          navigator.clipboard.writeText(text);
-          copyBtn.textContent = 'Скопировано!';
-          setTimeout(() => copyBtn.textContent = 'Копировать', 2000);
-        };
+        const copyBtn = document.createElement('button'); copyBtn.className = 'copy-btn'; copyBtn.textContent = 'Копировать';
+        copyBtn.onclick = () => { navigator.clipboard.writeText(text); copyBtn.textContent = 'Скопировано!'; setTimeout(() => copyBtn.textContent = 'Копировать', 2000); };
         content.appendChild(copyBtn);
+      }
+      if (sender === 'user') {
+        const editBtn = document.createElement('button'); editBtn.className = 'edit-btn'; editBtn.textContent = 'Изменить';
+        editBtn.onclick = () => { document.getElementById('messageInput').value = text; document.getElementById('messageInput').focus(); };
+        content.appendChild(editBtn);
       }
     }
 
     if (imageUrl && imageUrl.startsWith('http')) {
       const isVideo = imageUrl.match(/\.(mp4|webm|mov|avi)(\?|$)/i) || imageUrl.includes('video');
       if (isVideo) {
-        const video = document.createElement('video'); video.src = imageUrl; video.controls = true;
-        video.style.maxWidth = '100%'; video.style.borderRadius = '12px'; video.style.marginTop = '10px';
-        content.appendChild(video);
+        const video = document.createElement('video'); video.src = imageUrl; video.controls = true; video.style.maxWidth = '100%'; video.style.borderRadius = '12px'; video.style.marginTop = '10px'; content.appendChild(video);
       } else {
-        const img = document.createElement('img'); img.src = imageUrl;
-        img.style.opacity = '0'; img.style.transition = 'opacity 0.5s ease';
-        img.onload = () => { img.style.opacity = '1'; };
-        content.appendChild(img);
+        const img = document.createElement('img'); img.src = imageUrl; img.style.opacity = '0'; img.style.transition = 'opacity 0.5s ease'; img.onload = () => { img.style.opacity = '1'; }; content.appendChild(img);
       }
     }
-    
-    row.appendChild(avatar); row.appendChild(content); container.appendChild(row);
-    container.scrollTop = container.scrollHeight;
+    row.appendChild(avatar); row.appendChild(content); container.appendChild(row); container.scrollTop = container.scrollHeight;
   }
 </script>
 </body>
