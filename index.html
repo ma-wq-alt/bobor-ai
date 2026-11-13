@@ -138,7 +138,6 @@
   .btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-attach { background: transparent; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 0 10px; display: flex; align-items: center; }
   .btn-attach:hover { color: var(--text-main); }
-  .stop-btn { background: var(--danger); color: #fff; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 14px; margin: 10px auto; display: none; width: fit-content; }
 
   /* МОДАЛЬНЫЕ ОКНА */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: none; justify-content: center; align-items: center; z-index: 1000; }
@@ -259,8 +258,8 @@
         <button class="btn-attach" onclick="document.getElementById('fileInput').click()">📎</button>
         <input type="text" id="messageInput" placeholder="Напиши сообщение..." onkeydown="if(event.key==='Enter') sendMessage()">
         <button class="btn-send" id="btnSend" onclick="sendMessage()">➤</button>
+        <button class="btn-send" id="btnStop" onclick="stopGeneration()" style="display: none; background: var(--danger); font-size: 14px;">■</button>
       </div>
-      <button class="stop-btn" id="stopBtn" onclick="stopGeneration()">Остановить</button>
     </div>
   </div>
 </div>
@@ -466,7 +465,7 @@
     const text = input.value.trim();
     if ((!text && !selectedFile) || !currentChatId) return;
 
-        addMessageToUI(text || 'Фото', 'user');
+    addMessageToUI(text || 'Фото', 'user');
     
     const formData = new FormData();
     formData.append('message', text); formData.append('mode', currentMode);
@@ -476,8 +475,9 @@
     input.placeholder = 'Напиши сообщение...';
 
     showTypingIndicator();
-    document.getElementById('btnSend').disabled = true;
-    document.getElementById('stopBtn').style.display = 'block';
+    // МЕНЯЕМ КНОПКУ ОТПРАВКИ НА КНОПКУ СТОП
+    document.getElementById('btnSend').style.display = 'none';
+    document.getElementById('btnStop').style.display = 'flex';
 
     abortController = new AbortController();
 
@@ -488,8 +488,8 @@
       });
       const data = await res.json();
       removeTypingIndicator();
-      document.getElementById('btnSend').disabled = false;
-      document.getElementById('stopBtn').style.display = 'none';
+      document.getElementById('btnSend').style.display = 'flex';
+      document.getElementById('btnStop').style.display = 'none';
 
       if (res.ok) { addMessageToUI(data.reply, 'bot', data.imageUrl); loadChats(); } 
       else { addMessageToUI('Ошибка: ' + data.error, 'bot'); }
@@ -500,13 +500,16 @@
         addMessageToUI('Ошибка соединения', 'bot'); 
       }
       removeTypingIndicator();
-      document.getElementById('btnSend').disabled = false;
-      document.getElementById('stopBtn').style.display = 'none';
+      document.getElementById('btnSend').style.display = 'flex';
+      document.getElementById('btnStop').style.display = 'none';
     }
   }
 
   function stopGeneration() {
     if (abortController) abortController.abort();
+    document.getElementById('btnSend').style.display = 'flex';
+    document.getElementById('btnStop').style.display = 'none';
+    removeTypingIndicator();
   }
 
   function showTypingIndicator() {
