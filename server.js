@@ -11,7 +11,8 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+// Настройка Multer для фото/видео (лимит 20 МБ)
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL || 'file:local.db',
@@ -30,6 +31,7 @@ const transporter = nodemailer.createTransport({
 
 async function initDB() {
   try {
+    // Автообновление структуры (на случай старых баз)
     try { await db.execute('SELECT theme FROM users LIMIT 1'); } 
     catch (e) {
       if (e.message.includes('no such column') || e.message.includes('no such table')) {
@@ -82,6 +84,7 @@ async function initDB() {
       )
     `);
     
+    // Создаем админа
     const adminEmail = 'mar.maks999@gmail.com';
     const adminCheck = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [adminEmail] });
     if (adminCheck.rows.length === 0) {
@@ -90,7 +93,9 @@ async function initDB() {
         sql: 'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)',
         args: ['hank', adminEmail, hash, 'admin']
       });
+      console.log('✅ Админский аккаунт (hank) создан');
     }
+    console.log('✅ База данных инициализирована');
   } catch (err) {
     console.error('❌ Ошибка БД:', err.message);
   }
@@ -110,20 +115,24 @@ function authMiddleware(req, res, next) {
   }
 }
 
+// Вход по паролю
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
   try {
     const result = await db.execute({ sql: 'SELECT * FROM users WHERE username = ? OR email = ?', args: [username, username] });
     const user = result.rows[0];
     if (!user || !user.password_hash) return res.status(401).json({ error: 'Неверный логин или пароль' });
+    
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Неверный логин или пароль' });
     
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, role: user.role, theme: user.theme || 'dark', language: user.language || 'ru' });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: 'Ошибка сервера' }); }
 });
 
+// Отправка кода на почту
 app.post('/api/send-code', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Введите почту' });
@@ -152,9 +161,10 @@ app.post('/api/send-code', async (req, res) => {
       console.log(`\n========================================\n🚀 КОД ДЛЯ ${email}: ${otp}\n========================================\n`);
       res.json({ success: true, message: 'Код в логах Render (почта не настроена).' });
     }
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: 'Ошибка отправки' }); }
 });
 
+// Проверка кода
 app.post('/api/verify-code', async (req, res) => {
   const { email, code } = req.body;
   try {
@@ -167,9 +177,10 @@ app.post('/api/verify-code', async (req, res) => {
     await db.execute({ sql: 'UPDATE users SET otp_code = NULL, otp_expires = NULL WHERE id = ?', args: [user.id] });
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, role: user.role, theme: user.theme || 'dark', language: user.language || 'ru' });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ error: 'Ошибка сервера' }); }
 });
 
+// Настройки
 app.post('/api/user/settings', authMiddleware, async (req, res) => {
   const { username, theme, language } = req.body;
   try {
@@ -182,6 +193,7 @@ app.post('/api/user/settings', authMiddleware, async (req, res) => {
   }
 });
 
+// База знаний (Админ)
 app.get('/api/bot/knowledge', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
   try {
@@ -200,6 +212,7 @@ app.post('/api/bot/knowledge', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Чаты
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({ sql: 'SELECT * FROM chats WHERE user_id = ? ORDER BY created_at DESC', args: [req.user.id] });
@@ -224,6 +237,7 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Отправка сообщения
 app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
   const { chatId } = req.params;
   const { message, mode } = req.body; 
