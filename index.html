@@ -7,40 +7,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
-  :root {
-    --bg-main: #0b0f19;
-    --sidebar-bg: #111827;
-    --chat-bg: #0b0f19;
-    --primary: #6366f1;
-    --primary-hover: #4f46e5;
-    --primary-glow: rgba(99, 102, 241, 0.3);
-    --text-main: #f3f4f6;
-    --text-muted: #9ca3af;
-    --border: #1f2937;
-    --msg-bot-bg: #1f2937;
-    --msg-user-bg: #4f46e5;
-    --input-bg: #111827;
-    --danger: #ef4444;
-    --success: #10b981;
-  }
-  body.light-theme {
-    --bg-main: #f9fafb;
-    --sidebar-bg: #ffffff;
-    --chat-bg: #ffffff;
-    --primary: #4f46e5;
-    --primary-hover: #4338ca;
-    --primary-glow: rgba(79, 70, 229, 0.15);
-    --text-main: #111827;
-    --text-muted: #6b7280;
-    --border: #e5e7eb;
-    --msg-bot-bg: #f3f4f6;
-    --msg-user-bg: #4f46e5;
-    --input-bg: #f3f4f6;
-  }
+  :root { --bg-main: #0b0f19; --sidebar-bg: #111827; --chat-bg: #0b0f19; --primary: #6366f1; --primary-hover: #4f46e5; --primary-glow: rgba(99, 102, 241, 0.3); --text-main: #f3f4f6; --text-muted: #9ca3af; --border: #1f2937; --msg-bot-bg: #1f2937; --msg-user-bg: #4f46e5; --input-bg: #111827; --danger: #ef4444; --success: #10b981; }
+  body.light-theme { --bg-main: #f9fafb; --sidebar-bg: #ffffff; --chat-bg: #ffffff; --primary: #4f46e5; --primary-hover: #4338ca; --primary-glow: rgba(79, 70, 229, 0.15); --text-main: #111827; --text-muted: #6b7280; --border: #e5e7eb; --msg-bot-bg: #f3f4f6; --msg-user-bg: #4f46e5; --input-bg: #f3f4f6; }
   * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; transition: background-color 0.3s, color 0.3s, border-color 0.3s; }
   body { background: var(--bg-main); color: var(--text-main); height: 100vh; display: flex; overflow: hidden; }
 
-  /* ЭКРАН ВХОДА */
   #auth-screen { position: fixed; inset: 0; background: var(--bg-main); display: flex; justify-content: center; align-items: center; z-index: 100; }
   .auth-box { background: var(--sidebar-bg); padding: 40px; border-radius: 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); width: 400px; text-align: center; border: 1px solid var(--border); }
   .auth-box h2 { margin-bottom: 25px; font-size: 26px; font-weight: 700; }
@@ -54,7 +25,6 @@
   .auth-msg { font-size: 14px; color: var(--danger); margin-top: 10px; min-height: 20px; }
   .timer-text { font-size: 12px; color: var(--text-muted); margin-top: 5px; }
 
-  /* ОСНОВНОЙ ИНТЕРФЕЙС */
   #main-app { display: none; width: 100%; height: 100vh; }
   .sidebar { width: 260px; background: var(--sidebar-bg); display: flex; flex-direction: column; border-right: 1px solid var(--border); }
   .sidebar-header { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
@@ -72,11 +42,17 @@
   .chat-item .chat-menu { display: none; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 0 5px; }
   .chat-item:hover .chat-menu { display: block; }
   
-  /* ИСПРАВЛЕНО: Классы меню чата */
   .chat-menu-dropdown { position: fixed; background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000; min-width: 140px; }
   .chat-menu-dropdown div { padding: 10px 15px; cursor: pointer; font-size: 13px; color: var(--text-main); }
   .chat-menu-dropdown div:hover { background: var(--border); }
   .chat-menu-dropdown .danger { color: var(--danger); }
+
+  /* Стили для подписки */
+  .sub-block { background: var(--bg-main); border: 1px solid var(--primary); border-radius: 8px; padding: 12px; margin: 10px; text-align: center; }
+  .sub-block h4 { margin-bottom: 5px; color: var(--primary); font-size: 14px; }
+  .sub-block p { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+  .btn-buy-sub { width: 100%; padding: 8px; background: var(--success); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; }
+  .btn-buy-sub:hover { background: #059669; }
 
   .user-info { padding: 15px; border-top: 1px solid var(--border); background: var(--sidebar-bg); }
   .user-name { font-weight: 600; font-size: 14px; margin-bottom: 10px; }
@@ -86,7 +62,6 @@
   .btn-logout { color: var(--danger) !important; border-color: var(--danger) !important; }
   .btn-logout:hover { background: rgba(239, 68, 68, 0.1) !important; }
 
-  /* ЧАТ */
   .chat-area { flex: 1; display: flex; flex-direction: column; background: var(--chat-bg); }
   .chat-header { padding: 15px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
   .chat-title { font-weight: 600; font-size: 16px; }
@@ -124,7 +99,6 @@
   .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
   @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
 
-  /* ПАНЕЛЬ ВВОДА */
   .input-panel { padding: 20px 10% 30px; background: linear-gradient(to top, var(--chat-bg) 70%, transparent); }
   .mode-selector { display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; }
   .mode-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--sidebar-bg); color: var(--text-muted); cursor: pointer; font-size: 12px; font-weight: 500; }
@@ -140,7 +114,6 @@
   .btn-attach { background: transparent; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 0 10px; display: flex; align-items: center; }
   .btn-attach:hover { color: var(--text-main); }
 
-  /* МОДАЛЬНЫЕ ОКНА */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: none; justify-content: center; align-items: center; z-index: 1000; }
   .modal { background: var(--sidebar-bg); padding: 30px; border-radius: 20px; width: 420px; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
   .modal h3 { margin-bottom: 20px; font-size: 20px; }
@@ -153,7 +126,6 @@
   .btn-cancel { background: var(--border); color: var(--text-main); }
   .btn-save { background: var(--primary); color: #fff; }
 
-  /* Меню 3 точки (настройки) */
   .dropdown { position: relative; display: inline-block; }
   .dropdown-content { display: none; position: absolute; right: 0; top: 100%; background: var(--sidebar-bg); min-width: 160px; box-shadow: 0 8px 16px rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border); z-index: 10; overflow: hidden; }
   .dropdown-content a { color: var(--text-main); padding: 12px 16px; text-decoration: none; display: block; font-size: 14px; cursor: pointer; }
@@ -218,6 +190,14 @@
       <button class="btn-primary btn-train" id="btnTrain" onclick="openTrain()" style="display: none;">Обучить Бобора</button>
     </div>
     <div class="chat-list" id="chatList"></div>
+
+    <!-- БЛОК ПОДПИСКИ -->
+    <div class="sub-block">
+      <h4>Подписка PRO</h4>
+      <p>100 TTFBL / 30 дней</p>
+      <button class="btn-buy-sub" onclick="paySubscription()">Оплатить из Банка</button>
+    </div>
+
     <div class="user-info">
       <div class="user-name" id="currentUser"></div>
       <div class="user-actions">
@@ -390,7 +370,25 @@
   function closeSettings() { document.getElementById('settingsModal').style.display = 'none'; }
   async function saveSettings() { const newNick = document.getElementById('settingNickname').value; const newTheme = document.getElementById('settingTheme').value; const res = await fetch('/api/user/settings', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ username: newNick, theme: newTheme, language: 'ru' }) }); const data = await res.json(); if (res.ok) { localStorage.setItem('token', data.token); localStorage.setItem('username', data.username); localStorage.setItem('theme', data.theme); location.reload(); } else { alert(data.error); } }
 
-  // ИСПРАВЛЕНО: Теперь используется createElement (без багов с кавычками в названиях)
+  // ОПЛАТА ПОДПИСКИ
+  async function paySubscription() {
+    if (!confirm('Списать 100 TTFBL с вашего счета в Банке?')) return;
+    try {
+      const res = await fetch('/api/pay_sub', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert('✅ ' + data.message);
+      } else {
+        alert('❌ Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+      }
+    } catch (err) {
+      alert('❌ Ошибка соединения с сервером');
+    }
+  }
+
   async function loadChats() {
     const res = await fetch('/api/chats', { headers: { 'Authorization': `Bearer ${token}` } });
     const chats = await res.json();
@@ -507,7 +505,6 @@
     input.placeholder = 'Напиши сообщение...';
 
     showTypingIndicator();
-    // МЕНЯЕМ КНОПКУ ОТПРАВКИ НА КНОПКУ СТОП
     document.getElementById('btnSend').style.display = 'none';
     document.getElementById('btnStop').style.display = 'flex';
 
