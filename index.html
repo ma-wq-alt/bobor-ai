@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>БОБОР-AI (с памятью)</title>
+<style>
+  /* ... (вставьте сюда все стили из предыдущего сообщения) ... */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); min-height: 100vh; display: flex; justify-content: center; align-items: center; color: #fff; }
+  .container { width: 100%; max-width: 700px; height: 90vh; background: rgba(20, 20, 40, 0.85); border-radius: 20px; box-shadow: 0 0 40px rgba(120, 80, 255, 0.5); display: flex; flex-direction: column; overflow: hidden; border: 1px solid rgba(150, 120, 255, 0.3); }
+  header { padding: 18px 24px; background: linear-gradient(90deg, #5b21b6, #7c3aed); display: flex; align-items: center; gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .logo { width: 42px; height: 42px; background: radial-gradient(circle, #a78bfa, #5b21b6); border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 22px; box-shadow: 0 0 15px #a78bfa; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 15px #a78bfa; } 50% { box-shadow: 0 0 30px #c4b5fd; } }
+  header h1 { font-size: 20px; letter-spacing: 1px; }
+  header .status { margin-left: auto; font-size: 12px; color: #a7f3d0; display: flex; align-items: center; gap: 6px; }
+  .status .dot { width: 8px; height: 8px; background: #34d399; border-radius: 50%; animation: blink 1.5s infinite; }
+  @keyframes blink { 50% { opacity: 0.3; } }
+  .chat { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  .chat::-webkit-scrollbar { width: 6px; }
+  .chat::-webkit-scrollbar-thumb { background: #5b21b6; border-radius: 3px; }
+  .msg { max-width: 80%; padding: 12px 16px; border-radius: 16px; line-height: 1.5; font-size: 15px; animation: fadeIn 0.3s ease; word-wrap: break-word; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .msg.user { align-self: flex-end; background: linear-gradient(135deg, #7c3aed, #5b21b6); border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: rgba(60, 50, 100, 0.8); border: 1px solid rgba(150, 120, 255, 0.25); border-bottom-left-radius: 4px; }
+  .msg.bot .name { font-size: 12px; color: #c4b5fd; margin-bottom: 4px; font-weight: bold; }
+  .typing { display: none; align-self: flex-start; padding: 12px 16px; background: rgba(60, 50, 100, 0.8); border-radius: 16px; font-size: 14px; color: #c4b5fd; }
+  .typing span { display: inline-block; width: 6px; height: 6px; background: #c4b5fd; border-radius: 50%; margin: 0 2px; animation: bounce 1.2s infinite; }
+  .typing span:nth-child(2) { animation-delay: 0.2s; } .typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-8px); } }
+  .input-area { padding: 16px; display: flex; gap: 10px; background: rgba(15, 12, 41, 0.9); border-top: 1px solid rgba(150, 120, 255, 0.2); }
+  .input-area input { flex: 1; padding: 14px 16px; border-radius: 12px; border: 1px solid rgba(150, 120, 255, 0.3); background: rgba(40, 35, 70, 0.8); color: #fff; font-size: 15px; outline: none; }
+  .input-area button { padding: 0 24px; border: none; border-radius: 12px; background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; font-size: 15px; font-weight: bold; cursor: pointer; }
+  .input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo">🦫</div>
+    <h1>БОБОР-AI (Turso Memory)</h1>
+    <div class="status"><span class="dot"></span> Online</div>
+  </header>
+  <div class="chat" id="chat"></div>
+  <div class="typing" id="typing">БОБОР-AI думает <span></span><span></span><span></span></div>
+  <div class="input-area">
+    <input type="text" id="userInput" placeholder="Спроси БОБОР-AI..." autocomplete="off">
+    <button id="sendBtn">Отправить</button>
+  </div>
+</div>
+<script>
+  const chat = document.getElementById('chat');
+  const input = document.getElementById('userInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const typing = document.getElementById('typing');
+
+  // Загрузка истории из базы (Turso) при старте
+  async function loadHistory() {
+    try {
+      const res = await fetch('/api/history');
+      const history = await res.json();
+      history.forEach(msg => addMessage(msg.content, msg.role === 'user' ? 'user' : 'bot'));
+    } catch (e) {
+      console.log('История пуста или сервер недоступен');
+    }
+  }
+
+  function addMessage(text, sender) {
+    const div = document.createElement('div');
+    div.className = 'msg ' + sender;
+    if (sender === 'bot') {
+      div.innerHTML = '<div class="name">БОБОР-AI</div>' + text.replace(/\n/g, '<br>');
+    } else {
+      div.textContent = text;
+    }
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  async function sendMessage() {
+    const text = input.value.trim();
+    if (!text) return;
+
+    addMessage(text, 'user');
+    input.value = '';
+    sendBtn.disabled = true;
+    typing.style.display = 'block';
+    chat.scrollTop = chat.scrollHeight;
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
+      });
+      const data = await res.json();
+      if (data.reply) {
+        addMessage(data.reply, 'bot');
+      } else {
+        throw new Error(data.error || 'Ошибка');
+      }
+    } catch (err) {
+      addMessage('Ошибка: ' + err.message, 'bot');
+    } finally {
+      typing.style.display = 'none';
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+  
+  loadHistory(); // Запускаем загрузку истории
+</script>
+</body>
+</html>
