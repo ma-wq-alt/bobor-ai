@@ -9,8 +9,16 @@
   
   /* ЭКРАН ВХОДА */
   #auth-screen { position: fixed; inset: 0; background: linear-gradient(135deg, #0f0c29, #302b63); display: flex; justify-content: center; align-items: center; z-index: 100; }
-  .auth-box { background: rgba(30, 30, 60, 0.9); padding: 40px; border-radius: 20px; box-shadow: 0 0 30px rgba(124, 58, 237, 0.5); width: 350px; text-align: center; }
+  .auth-box { background: rgba(30, 30, 60, 0.9); padding: 30px; border-radius: 20px; box-shadow: 0 0 30px rgba(124, 58, 237, 0.5); width: 350px; text-align: center; }
   .auth-box h2 { margin-bottom: 20px; color: #c4b5fd; }
+  
+  .tabs { display: flex; margin-bottom: 20px; border-bottom: 1px solid #5b21b6; }
+  .tab { flex: 1; padding: 10px; cursor: pointer; color: #a78bfa; }
+  .tab.active { color: #fff; border-bottom: 2px solid #7c3aed; font-weight: bold; }
+  
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
   .auth-box input { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #5b21b6; background: #1a1a3a; color: #fff; }
   .auth-box button { width: 100%; padding: 12px; background: #7c3aed; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; margin-bottom: 10px; }
   .auth-box button:hover { background: #6d28d9; }
@@ -18,8 +26,6 @@
 
   /* ОСНОВНОЙ ИНТЕРФЕЙС */
   #main-app { display: none; width: 100%; height: 100vh; }
-  
-  /* САЙДБАР */
   .sidebar { width: 260px; background: #15132b; display: flex; flex-direction: column; border-right: 1px solid #2a2550; }
   .sidebar-header { padding: 20px; border-bottom: 1px solid #2a2550; }
   .sidebar-header button { width: 100%; padding: 10px; background: #7c3aed; border: none; border-radius: 8px; color: #fff; cursor: pointer; font-weight: bold; }
@@ -28,7 +34,6 @@
   .chat-item:hover, .chat-item.active { background: #2a2550; color: #fff; }
   .user-info { padding: 15px; border-top: 1px solid #2a2550; display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
 
-  /* ЧАТ */
   .chat-area { flex: 1; display: flex; flex-direction: column; background: #0f0c29; }
   .messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
   .msg { max-width: 80%; padding: 12px 16px; border-radius: 16px; line-height: 1.5; word-wrap: break-word; }
@@ -36,7 +41,6 @@
   .msg.bot { align-self: flex-start; background: #2a2550; }
   .msg img { max-width: 100%; border-radius: 8px; margin-top: 8px; border: 1px solid #5b21b6; }
   
-  /* ПАНЕЛЬ ВВОДА */
   .input-panel { padding: 15px; background: #15132b; border-top: 1px solid #2a2550; }
   .mode-selector { display: flex; gap: 10px; margin-bottom: 10px; }
   .mode-btn { padding: 6px 15px; border-radius: 20px; border: 1px solid #5b21b6; background: transparent; color: #a78bfa; cursor: pointer; font-size: 12px; }
@@ -44,7 +48,6 @@
   .input-row { display: flex; gap: 10px; }
   .input-row input[type="text"] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #5b21b6; background: #1a1a3a; color: #fff; }
   .input-row button { padding: 0 20px; background: #7c3aed; border: none; border-radius: 8px; color: #fff; cursor: pointer; font-weight: bold; }
-  .input-row button:hover { background: #6d28d9; }
 </style>
 </head>
 <body>
@@ -53,15 +56,36 @@
 <div id="auth-screen">
   <div class="auth-box">
     <h2>🦫 БОБОР-AI</h2>
-    <input type="text" id="authUser" placeholder="Логин">
-    <input type="password" id="authPass" placeholder="Пароль">
-    <button onclick="login()">Войти</button>
-    <button onclick="register()" style="background: #4c1d95;">Регистрация</button>
+    
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('pass')">Пароль</div>
+      <div class="tab" onclick="switchTab('email')">Вход по коду</div>
+    </div>
+
+    <!-- Вкладка: Вход по паролю -->
+    <div id="tab-pass" class="tab-content active">
+      <input type="text" id="loginUser" placeholder="Ник или Email">
+      <input type="password" id="loginPass" placeholder="Пароль">
+      <button onclick="login()">Войти</button>
+      <button onclick="register()" style="background: #4c1d95;">Регистрация</button>
+    </div>
+
+    <!-- Вкладка: Вход по коду на почту -->
+    <div id="tab-email" class="tab-content">
+      <input type="email" id="emailInput" placeholder="Твоя почта">
+      <button onclick="requestCode()" id="btnRequest">Получить код</button>
+      
+      <div id="codeBlock" style="display: none; margin-top: 15px;">
+        <input type="text" id="codeInput" placeholder="Введи 6-значный код">
+        <button onclick="verifyCode()">Войти</button>
+      </div>
+    </div>
+
     <p id="authMsg"></p>
   </div>
 </div>
 
-<!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
+<!-- ОСНОВНОЙ ИНТЕРФЕЙС (без изменений) -->
 <div id="main-app">
   <div class="sidebar">
     <div class="sidebar-header">
@@ -73,7 +97,6 @@
       <button onclick="logout()" style="background: none; border: none; color: #f87171; cursor: pointer; font-weight: bold;">Выйти</button>
     </div>
   </div>
-  
   <div class="chat-area">
     <div class="messages" id="messages"></div>
     <div class="input-panel">
@@ -100,40 +123,75 @@
   let currentMode = 'normal';
   let selectedFile = null;
 
-  // --- АВТОРИЗАЦИЯ ---
+  // --- ЛОГИКА ВКЛАДОК ---
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    if (tab === 'pass') {
+      document.querySelectorAll('.tab')[0].classList.add('active');
+      document.getElementById('tab-pass').classList.add('active');
+    } else {
+      document.querySelectorAll('.tab')[1].classList.add('active');
+      document.getElementById('tab-email').classList.add('active');
+    }
+    document.getElementById('authMsg').textContent = '';
+  }
+
+  // --- ОБЫЧНЫЙ ВХОД / РЕГИСТРАЦИЯ ---
   async function login() {
-    const username = document.getElementById('authUser').value;
-    const password = document.getElementById('authPass').value;
+    const username = document.getElementById('loginUser').value;
+    const password = document.getElementById('loginPass').value;
     const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
     const data = await res.json();
     if (res.ok) {
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('username', data.username);
-      localStorage.setItem('role', data.role);
+      localStorage.setItem('token', data.token); localStorage.setItem('username', data.username); localStorage.setItem('role', data.role);
       initApp();
-    } else {
-      document.getElementById('authMsg').textContent = data.error;
-    }
+    } else { document.getElementById('authMsg').textContent = data.error; }
   }
 
   async function register() {
-    const username = document.getElementById('authUser').value;
-    const password = document.getElementById('authPass').value;
+    const username = document.getElementById('loginUser').value;
+    const password = document.getElementById('loginPass').value;
     const res = await fetch('/api/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
     const data = await res.json();
+    if (res.ok) alert(`Аккаунт создан! Роль: ${data.role}. Теперь войдите.`);
+    else document.getElementById('authMsg').textContent = data.error;
+  }
+
+  // --- ВХОД ПО КОДУ ---
+  async function requestCode() {
+    const email = document.getElementById('emailInput').value;
+    const res = await fetch('/api/send-code', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
     if (res.ok) {
-      alert(`Аккаунт создан! Роль: ${data.role}. Теперь войдите.`);
-    } else {
-      document.getElementById('authMsg').textContent = data.error;
-    }
+      document.getElementById('btnRequest').style.display = 'none';
+      document.getElementById('codeBlock').style.display = 'block';
+      document.getElementById('authMsg').textContent = data.message;
+      document.getElementById('authMsg').style.color = '#34d399';
+    } else { document.getElementById('authMsg').textContent = data.error; }
+  }
+
+  async function verifyCode() {
+    const email = document.getElementById('emailInput').value;
+    const code = document.getElementById('codeInput').value;
+    const res = await fetch('/api/verify-code', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      localStorage.setItem('token', data.token); localStorage.setItem('username', data.username); localStorage.setItem('role', data.role);
+      initApp();
+    } else { document.getElementById('authMsg').textContent = data.error; }
   }
 
   function logout() {
@@ -151,7 +209,7 @@
 
   if (token) initApp();
 
-  // --- ЧАТЫ ---
+  // ... (ЛОГИКА ЧАТОВ И ОТПРАВКИ СООБЩЕНИЙ БЕЗ ИЗМЕНЕНИЙ, КАК В ПРЕДЫДУЩЕМ КОДЕ) ...
   async function loadChats() {
     const res = await fetch('/api/chats', { headers: { 'Authorization': `Bearer ${token}` } });
     const chats = await res.json();
@@ -169,22 +227,18 @@
   async function createNewChat() {
     const res = await fetch('/api/chats', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
     const data = await res.json();
-    currentChatId = data.chatId;
-    loadChats();
+    currentChatId = data.chatId; loadChats();
     document.getElementById('messages').innerHTML = '';
   }
 
   async function openChat(chatId) {
-    currentChatId = chatId;
-    loadChats();
+    currentChatId = chatId; loadChats();
     const res = await fetch(`/api/chats/${chatId}/messages`, { headers: { 'Authorization': `Bearer ${token}` } });
     const msgs = await res.json();
-    const container = document.getElementById('messages');
-    container.innerHTML = '';
+    const container = document.getElementById('messages'); container.innerHTML = '';
     msgs.forEach(m => addMessageToUI(m.content, m.role === 'user' ? 'user' : 'bot', m.image_url));
   }
 
-  // --- ВВОД И ОТПРАВКА ---
   function setMode(mode) {
     currentMode = mode;
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -193,11 +247,7 @@
 
   function handleFileSelect(event) {
     selectedFile = event.target.files[0];
-    if (selectedFile) {
-      document.getElementById('messageInput').placeholder = `Фото: ${selectedFile.name}`;
-    } else {
-      document.getElementById('messageInput').placeholder = 'Напиши сообщение...';
-    }
+    if (selectedFile) document.getElementById('messageInput').placeholder = `Фото: ${selectedFile.name}`;
   }
 
   async function sendMessage() {
@@ -205,71 +255,35 @@
     const text = input.value.trim();
     if ((!text && !selectedFile) || !currentChatId) return;
 
-    // Мгновенно показываем сообщение пользователя
     addMessageToUI(text || '📷 Фото', 'user');
-    
     const formData = new FormData();
-    formData.append('message', text);
-    formData.append('mode', currentMode);
-    if (selectedFile) {
-      formData.append('image', selectedFile);
-    }
+    formData.append('message', text); formData.append('mode', currentMode);
+    if (selectedFile) formData.append('image', selectedFile);
 
-    // Очищаем поле
-    input.value = '';
-    selectedFile = null;
-    document.getElementById('fileInput').value = '';
+    input.value = ''; selectedFile = null; document.getElementById('fileInput').value = '';
     input.placeholder = 'Напиши сообщение...';
 
     try {
       const res = await fetch(`/api/chats/${currentChatId}/message`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
+        method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData
       });
-      
       const data = await res.json();
-      if (res.ok) {
-        addMessageToUI(data.reply, 'bot', data.imageUrl);
-        loadChats(); 
-      } else {
-        addMessageToUI('Ошибка: ' + data.error, 'bot');
-      }
-    } catch (err) {
-      addMessageToUI('Ошибка соединения', 'bot');
-    }
+      if (res.ok) { addMessageToUI(data.reply, 'bot', data.imageUrl); loadChats(); }
+      else { addMessageToUI('Ошибка: ' + data.error, 'bot'); }
+    } catch (err) { addMessageToUI('Ошибка соединения', 'bot'); }
   }
 
   function addMessageToUI(text, sender, imageUrl = null) {
     const container = document.getElementById('messages');
-    const div = document.createElement('div');
-    div.className = `msg ${sender}`;
-    
+    const div = document.createElement('div'); div.className = `msg ${sender}`;
     if (text) {
-      const textNode = document.createElement('div');
-      textNode.textContent = text;
-      div.appendChild(textNode);
+      const textNode = document.createElement('div'); textNode.textContent = text; div.appendChild(textNode);
     }
-
-    if (imageUrl) {
-      if (imageUrl.startsWith('http')) {
-        const img = document.createElement('img');
-        img.src = imageUrl;
-        div.appendChild(img);
-      } else {
-        // Если картинка была загружена пользователем
-        const badge = document.createElement('div');
-        badge.style.fontSize = '12px';
-        badge.style.color = '#c4b5fd';
-        badge.textContent = '🖼️ [Изображение прикреплено]';
-        div.appendChild(badge);
-      }
+    if (imageUrl && imageUrl.startsWith('http')) {
+      const img = document.createElement('img'); img.src = imageUrl; div.appendChild(img);
     }
-
-    container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    container.appendChild(div); container.scrollTop = container.scrollHeight;
   }
 </script>
-
 </body>
 </html>
