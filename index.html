@@ -12,9 +12,9 @@
   .auth-box { background: rgba(30, 30, 60, 0.9); padding: 40px; border-radius: 20px; box-shadow: 0 0 30px rgba(124, 58, 237, 0.5); width: 350px; text-align: center; }
   .auth-box h2 { margin-bottom: 20px; color: #c4b5fd; }
   .auth-box input { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #5b21b6; background: #1a1a3a; color: #fff; }
-  .auth-box button { width: 100%; padding: 12px; background: #7c3aed; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; }
+  .auth-box button { width: 100%; padding: 12px; background: #7c3aed; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; margin-bottom: 10px; }
   .auth-box button:hover { background: #6d28d9; }
-  .auth-box p { margin-top: 15px; font-size: 14px; color: #a78bfa; cursor: pointer; text-decoration: underline; }
+  .auth-box p { font-size: 14px; color: #f87171; margin-top: 10px; }
 
   /* ОСНОВНОЙ ИНТЕРФЕЙС */
   #main-app { display: none; width: 100%; height: 100vh; }
@@ -31,10 +31,10 @@
   /* ЧАТ */
   .chat-area { flex: 1; display: flex; flex-direction: column; background: #0f0c29; }
   .messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
-  .msg { max-width: 80%; padding: 12px 16px; border-radius: 16px; line-height: 1.5; }
+  .msg { max-width: 80%; padding: 12px 16px; border-radius: 16px; line-height: 1.5; word-wrap: break-word; }
   .msg.user { align-self: flex-end; background: #7c3aed; }
   .msg.bot { align-self: flex-start; background: #2a2550; }
-  .msg img { max-width: 100%; border-radius: 8px; margin-top: 5px; }
+  .msg img { max-width: 100%; border-radius: 8px; margin-top: 8px; border: 1px solid #5b21b6; }
   
   /* ПАНЕЛЬ ВВОДА */
   .input-panel { padding: 15px; background: #15132b; border-top: 1px solid #2a2550; }
@@ -42,8 +42,9 @@
   .mode-btn { padding: 6px 15px; border-radius: 20px; border: 1px solid #5b21b6; background: transparent; color: #a78bfa; cursor: pointer; font-size: 12px; }
   .mode-btn.active { background: #5b21b6; color: #fff; }
   .input-row { display: flex; gap: 10px; }
-  .input-row input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #5b21b6; background: #1a1a3a; color: #fff; }
-  .input-row button { padding: 0 20px; background: #7c3aed; border: none; border-radius: 8px; color: #fff; cursor: pointer; }
+  .input-row input[type="text"] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #5b21b6; background: #1a1a3a; color: #fff; }
+  .input-row button { padding: 0 20px; background: #7c3aed; border: none; border-radius: 8px; color: #fff; cursor: pointer; font-weight: bold; }
+  .input-row button:hover { background: #6d28d9; }
 </style>
 </head>
 <body>
@@ -55,8 +56,8 @@
     <input type="text" id="authUser" placeholder="Логин">
     <input type="password" id="authPass" placeholder="Пароль">
     <button onclick="login()">Войти</button>
-    <button onclick="register()" style="background: #4c1d95; margin-top: 10px;">Регистрация</button>
-    <p id="authMsg" style="color: #f87171; margin-top: 10px;"></p>
+    <button onclick="register()" style="background: #4c1d95;">Регистрация</button>
+    <p id="authMsg"></p>
   </div>
 </div>
 
@@ -69,7 +70,7 @@
     <div class="chat-list" id="chatList"></div>
     <div class="user-info">
       <span id="currentUser"></span>
-      <button onclick="logout()" style="background: none; border: none; color: #f87171; cursor: pointer;">Выйти</button>
+      <button onclick="logout()" style="background: none; border: none; color: #f87171; cursor: pointer; font-weight: bold;">Выйти</button>
     </div>
   </div>
   
@@ -82,6 +83,8 @@
         <button class="mode-btn" data-mode="strong" onclick="setMode('strong')">Сильный</button>
       </div>
       <div class="input-row">
+        <input type="file" id="fileInput" accept="image/*" style="display: none;" onchange="handleFileSelect(event)">
+        <button onclick="document.getElementById('fileInput').click()" style="background: #4c1d95; padding: 0 15px;">📎</button>
         <input type="text" id="messageInput" placeholder="Напиши сообщение..." onkeydown="if(event.key==='Enter') sendMessage()">
         <button onclick="sendMessage()">➤</button>
       </div>
@@ -95,6 +98,7 @@
   let currentRole = localStorage.getItem('role');
   let currentChatId = null;
   let currentMode = 'normal';
+  let selectedFile = null;
 
   // --- АВТОРИЗАЦИЯ ---
   async function login() {
@@ -137,7 +141,7 @@
     location.reload();
   }
 
-  // --- ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ ---
+  // --- ИНИЦИАЛИЗАЦИЯ ---
   function initApp() {
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('main-app').style.display = 'flex';
@@ -177,43 +181,91 @@
     const msgs = await res.json();
     const container = document.getElementById('messages');
     container.innerHTML = '';
-    msgs.forEach(m => addMessageToUI(m.content, m.role === 'user' ? 'user' : 'bot'));
+    msgs.forEach(m => addMessageToUI(m.content, m.role === 'user' ? 'user' : 'bot', m.image_url));
   }
 
-  // --- ОТПРАВКА СООБЩЕНИЯ ---
+  // --- ВВОД И ОТПРАВКА ---
   function setMode(mode) {
     currentMode = mode;
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
     document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
   }
 
-  async function sendMessage() {
-    const input = document.getElementById('messageInput');
-    const text = input.value.trim();
-    if (!text || !currentChatId) return;
-
-    addMessageToUI(text, 'user');
-    input.value = '';
-
-    const res = await fetch(`/api/chats/${currentChatId}/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ message: text, mode: currentMode })
-    });
-    const data = await res.json();
-    if (res.ok) {
-      addMessageToUI(data.reply, 'bot');
-      loadChats(); // Обновить название чата
+  function handleFileSelect(event) {
+    selectedFile = event.target.files[0];
+    if (selectedFile) {
+      document.getElementById('messageInput').placeholder = `Фото: ${selectedFile.name}`;
     } else {
-      addMessageToUI('Ошибка: ' + data.error, 'bot');
+      document.getElementById('messageInput').placeholder = 'Напиши сообщение...';
     }
   }
 
-  function addMessageToUI(text, sender) {
+  async function sendMessage() {
+    const input = document.getElementById('messageInput');
+    const text = input.value.trim();
+    if ((!text && !selectedFile) || !currentChatId) return;
+
+    // Мгновенно показываем сообщение пользователя
+    addMessageToUI(text || '📷 Фото', 'user');
+    
+    const formData = new FormData();
+    formData.append('message', text);
+    formData.append('mode', currentMode);
+    if (selectedFile) {
+      formData.append('image', selectedFile);
+    }
+
+    // Очищаем поле
+    input.value = '';
+    selectedFile = null;
+    document.getElementById('fileInput').value = '';
+    input.placeholder = 'Напиши сообщение...';
+
+    try {
+      const res = await fetch(`/api/chats/${currentChatId}/message`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        addMessageToUI(data.reply, 'bot', data.imageUrl);
+        loadChats(); 
+      } else {
+        addMessageToUI('Ошибка: ' + data.error, 'bot');
+      }
+    } catch (err) {
+      addMessageToUI('Ошибка соединения', 'bot');
+    }
+  }
+
+  function addMessageToUI(text, sender, imageUrl = null) {
     const container = document.getElementById('messages');
     const div = document.createElement('div');
     div.className = `msg ${sender}`;
-    div.textContent = text;
+    
+    if (text) {
+      const textNode = document.createElement('div');
+      textNode.textContent = text;
+      div.appendChild(textNode);
+    }
+
+    if (imageUrl) {
+      if (imageUrl.startsWith('http')) {
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        div.appendChild(img);
+      } else {
+        // Если картинка была загружена пользователем
+        const badge = document.createElement('div');
+        badge.style.fontSize = '12px';
+        badge.style.color = '#c4b5fd';
+        badge.textContent = '🖼️ [Изображение прикреплено]';
+        div.appendChild(badge);
+      }
+    }
+
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
   }
