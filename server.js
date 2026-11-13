@@ -5,16 +5,15 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(__dirname)); // Чтобы отдавать index.html
+app.use(express.static(__dirname)); // Раздает index.html
 
-// --- НАСТРОЙКА TURSO ---
-// Эти переменные вы добавите в Render (Environment Variables)
+// Настройка Turso (База данных памяти)
 const db = createClient({
-  url: process.env.TURSO_DATABASE_URL || 'file:local.db', // Локально для теста
+  url: process.env.TURSO_DATABASE_URL || 'file:local.db',
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
-// Инициализация таблицы истории
+// Создаем таблицу при старте
 async function initDB() {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -32,44 +31,51 @@ app.post('/api/chat', async (req, res) => {
   const { message } = req.body;
 
   try {
-    // 1. Сохраняем сообщение пользователя в Turso
+    // 1. Сохраняем сообщение пользователя
     await db.execute({
       sql: "INSERT INTO messages (role, content) VALUES (?, ?)",
       args: ['user', message]
     });
 
-    // 2. Достаем последние 20 сообщений для контекста (память)
+    // 2. Достаем последние 20 сообщений (чтобы бот помнил контекст)
     const historyResult = await db.execute(
       "SELECT role, content FROM messages ORDER BY id DESC LIMIT 20"
     );
-    // Переворачиваем, чтобы было от старых к новым
     const history = historyResult.rows.reverse().map(row => ({
       role: row.role,
       content: row.content
     }));
 
-    // Добавляем системный промпт, чтобы бот знал, кто он
+    // 3. Добавляем характер Бобора
     const messagesForAI = [
-      { role: 'system', content: 'Ты — БОБОР-AI, дружелюбный и немного юморной ассистент. Отвечай на русском.' },
+      { role: 'system', content: 'Ты — БОБОР-AI, умный, дружелюбный и немного юморной ассистент. Отвечай на русском языке, кратко и по делу.' },
       ...history
     ];
 
-    // 3. Отправляем запрос в нейросеть (Pollinations, бесплатно)
-    const aiResponse = await fetch('https://text.pollinations.ai/openai', {
+    // 4. Стучимся в DeepSeek API
+    const aiResponse = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}` // Ключ из настроек Render
+      },
       body: JSON.stringify({
-        model: 'openai',
+        model: 'deepseek-chat', // Модель DeepSeek V3
         messages: messagesForAI,
-        temperature: 0.7
+        temperature: 0.7,
+        max_tokens: 1000
       })
     });
 
-    if (!aiResponse.ok) throw new Error(`AI Error: ${aiResponse.status}`);
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text();
+      throw new Error(`DeepSeek API вернул ошибку: ${aiResponse.status} - ${errText}`);
+    }
+
     const aiData = await aiResponse.json();
     const replyText = aiData.choices[0].message.content;
 
-    // 4. Сохраняем ответ бота в Turso
+    // 5. Сохраняем ответ бота в память
     await db.execute({
       sql: "INSERT INTO messages (role, content) VALUES (?, ?)",
       args: ['assistant', replyText]
@@ -79,11 +85,11 @@ app.post('/api/chat', async (req, res) => {
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Бобор задумался или произошла ошибка памяти.' });
+    res.status(500).json({ error: 'Бобор задумался: ' + error.message });
   }
 });
 
-// Эндпоинт для загрузки истории при старте
+// Загрузка истории при открытии сайта
 app.get('/api/history', async (req, res) => {
   try {
     const result = await db.execute("SELECT role, content FROM messages ORDER BY id ASC");
