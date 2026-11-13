@@ -4,7 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>БОБОР-AI</title>
+<!-- Шрифт Inter -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Библиотека для парсинга Markdown (звездочек, решеток) -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
 <style>
   :root {
     --bg-main: #0b0f19;
@@ -83,7 +87,7 @@
   .icon-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; padding: 5px 10px; border-radius: 8px; }
   .icon-btn:hover { background: var(--border); color: var(--text-main); }
 
-  .messages { flex: 1; padding: 20px 15%; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+  .messages { flex: 1; padding: 20px 10%; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
   .messages::-webkit-scrollbar { width: 6px; }
   .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
   
@@ -91,10 +95,21 @@
   .msg-row.user { flex-direction: row-reverse; }
   .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 14px; font-weight: 600; flex-shrink: 0; background: var(--border); color: var(--text-main); }
   .msg-row.bot .avatar { background: var(--primary); color: #fff; }
-  .msg-content { padding: 12px 18px; border-radius: 16px; line-height: 1.6; font-size: 15px; max-width: 80%; word-wrap: break-word; }
+  
+  /* Увеличенная ширина бабблов для длинных текстов */
+  .msg-content { padding: 12px 18px; border-radius: 16px; line-height: 1.6; font-size: 15px; max-width: 85%; word-wrap: break-word; overflow-wrap: break-word; }
   .msg-row.bot .msg-content { background: var(--msg-bot-bg); border-top-left-radius: 4px; }
   .msg-row.user .msg-content { background: var(--msg-user-bg); color: #fff; border-top-right-radius: 4px; }
   .msg-content img, .msg-content video { max-width: 100%; border-radius: 12px; margin-top: 10px; display: block; }
+  
+  /* Стили для Markdown (жирный шрифт, списки, код) */
+  .msg-content p { margin-bottom: 8px; }
+  .msg-content p:last-child { margin-bottom: 0; }
+  .msg-content strong { font-weight: 700; color: var(--primary); }
+  .msg-row.user .msg-content strong { color: #fff; }
+  .msg-content ul, .msg-content ol { margin-left: 20px; margin-bottom: 8px; }
+  .msg-content li { margin-bottom: 4px; }
+  .msg-content code { background: rgba(0,0,0,0.2); padding: 2px 4px; border-radius: 4px; font-family: monospace; font-size: 14px; }
   
   .copy-btn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; margin-top: 8px; float: right; }
   .copy-btn:hover { background: var(--border); color: var(--text-main); }
@@ -105,7 +120,7 @@
   .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
   @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
 
-  .input-panel { padding: 20px 15% 30px; background: linear-gradient(to top, var(--chat-bg) 70%, transparent); }
+  .input-panel { padding: 20px 10% 30px; background: linear-gradient(to top, var(--chat-bg) 70%, transparent); }
   .mode-selector { display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; }
   .mode-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--sidebar-bg); color: var(--text-muted); cursor: pointer; font-size: 12px; font-weight: 500; }
   .mode-btn:hover { border-color: var(--primary); color: var(--primary); }
@@ -483,7 +498,11 @@
     const content = document.createElement('div'); content.className = 'msg-content';
     
     if (text) {
-      const textNode = document.createElement('div'); textNode.textContent = text; content.appendChild(textNode);
+      const textNode = document.createElement('div');
+      // ИСПОЛЬЗУЕМ MARKED ДЛЯ ПАРСИНГА MARKDOWN
+      textNode.innerHTML = marked.parse(text);
+      content.appendChild(textNode);
+      
       if (sender === 'bot') {
         const copyBtn = document.createElement('button');
         copyBtn.className = 'copy-btn'; copyBtn.textContent = 'Копировать';
