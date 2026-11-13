@@ -30,11 +30,11 @@ const transporter = nodemailer.createTransport({
 
 async function initDB() {
   try {
-    // Авто-обновление старой базы
+    // Авто-обновление структуры базы
     try { await db.execute('SELECT theme FROM users LIMIT 1'); } 
     catch (e) {
       if (e.message.includes('no such column') || e.message.includes('no such table')) {
-        console.log('⚠️ Обновляем структуру базы для настроек...');
+        console.log('⚠️ Обновляем структуру базы...');
         await db.execute('DROP TABLE IF EXISTS users');
       }
     }
@@ -53,6 +53,16 @@ async function initDB() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    
+    // Таблица для "обучения" бота
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS bot_knowledge (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        prompt_text TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     await db.execute(`
       CREATE TABLE IF NOT EXISTS chats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,11 +92,10 @@ async function initDB() {
         sql: 'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)',
         args: ['hank', adminEmail, hash, 'admin']
       });
-      console.log('✅ Админский аккаунт (hank) создан автоматически');
     }
-    console.log('✅ База данных инициализирована');
+    console.log('✅ База данных готова');
   } catch (err) {
-    console.error('❌ Ошибка инициализации БД:', err.message);
+    console.error('❌ Ошибка БД:', err.message);
   }
 }
 initDB();
@@ -127,11 +136,9 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/send-code', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Введите почту' });
-
   try {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expires = new Date(Date.now() + 10 * 60000).toISOString(); 
-
     let userRes = await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] });
     let user = userRes.rows[0];
 
@@ -142,10 +149,7 @@ app.post('/api/send-code', async (req, res) => {
         args: [email, baseUsername, 'user', otp, expires]
       });
     } else {
-      await db.execute({
-        sql: 'UPDATE users SET otp_code = ?, otp_expires = ? WHERE email = ?',
-        args: [otp, expires, email]
-      });
+      await db.execute({ sql: 'UPDATE users SET otp_code = ?, otp_expires = ? WHERE email = ?', args: [otp, expires, email] });
     }
 
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
@@ -153,28 +157,14 @@ app.post('/api/send-code', async (req, res) => {
         from: '"БОБОР ПРОДАКШН" <' + process.env.EMAIL_USER + '>',
         to: email,
         subject: 'БОБОР ПРОДАКШН: Ваш код доступа',
-        text: `В начале ваш код: ${otp}. Это ваш код от Бобор Продакшн. Никому его не говорите!`,
-        html: `
-          <div style="font-family: Arial, sans-serif; background: #0f0c29; color: #fff; padding: 20px; border-radius: 10px;">
-            <h2 style="color: #a78bfa;">🦫 БОБОР ПРОДАКШН</h2>
-            <p style="font-size: 16px;">Привет! Ты запросил код для входа.</p>
-            <p style="font-size: 16px;">В начале ваш код: <b style="font-size: 24px; color: #c4b5fd;">${otp}</b></p>
-            <p style="font-size: 14px; color: #999;">Никому его не говорите. Код действует 10 минут.</p>
-          </div>
-        `
+        html: `<div style="font-family: Arial; background: #0f0c29; color: #fff; padding: 20px;"><h2>Ваш код: <b>${otp}</b></h2></div>`
       });
       res.json({ success: true, message: 'Код отправлен на почту!' });
     } else {
-      console.log(`\n\n========================================`);
-      console.log(`🚀 БОБОР ПРОДАКШН: НОВЫЙ ВХОД!`);
-      console.log(`📧 Почта: ${email}`);
-      console.log(`🔑 ВАШ КОД: ${otp}`);
-      console.log(`========================================\n\n`);
-      res.json({ success: true, message: 'Код сгенерирован! Смотрите логи Render.' });
+      console.log(`\n========================================\n🚀 КОД ДЛЯ ${email}: ${otp}\n========================================\n`);
+      res.json({ success: true, message: 'Код в логах Render (почта не настроена).' });
     }
-  } catch (err) {
-    res.status(500).json({ error: 'Ошибка: ' + err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/verify-code', async (req, res) => {
@@ -182,7 +172,6 @@ app.post('/api/verify-code', async (req, res) => {
   try {
     const result = await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] });
     const user = result.rows[0];
-    
     if (!user) return res.status(401).json({ error: 'Пользователь не найден' });
     if (user.otp_code !== code) return res.status(401).json({ error: 'Неверный код' });
     
@@ -193,12 +182,9 @@ app.post('/api/verify-code', async (req, res) => {
 
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, role: user.role, theme: user.theme || 'dark', language: user.language || 'ru' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- СОХРАНЕНИЕ НАСТРОЕК (ТЕМА, ЯЗЫК, НИК) ---
 app.post('/api/user/settings', authMiddleware, async (req, res) => {
   const { username, theme, language } = req.body;
   try {
@@ -206,14 +192,34 @@ app.post('/api/user/settings', authMiddleware, async (req, res) => {
       sql: 'UPDATE users SET username = ?, theme = ?, language = ? WHERE id = ?',
       args: [username, theme, language, req.user.id]
     });
-    
-    // Обновляем токен, так как изменился ник
     const newToken = jwt.sign({ id: req.user.id, username, role: req.user.role, theme, language }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ success: true, token: newToken, username, theme, language });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'Этот ник уже занят' });
     res.status(500).json({ error: err.message });
   }
+});
+
+// --- ОБУЧЕНИЕ БОТА (ТОЛЬКО ДЛЯ АДМИНА) ---
+app.get('/api/bot/knowledge', authMiddleware, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
+  try {
+    const result = await db.execute('SELECT prompt_text FROM bot_knowledge ORDER BY id DESC LIMIT 1');
+    res.json({ prompt: result.rows.length > 0 ? result.rows[0].prompt_text : '' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/bot/knowledge', authMiddleware, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
+  const { prompt } = req.body;
+  try {
+    await db.execute('DELETE FROM bot_knowledge'); // Очищаем старое
+    await db.execute({
+      sql: 'INSERT INTO bot_knowledge (prompt_text) VALUES (?)',
+      args: [prompt]
+    });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/chats', authMiddleware, async (req, res) => {
@@ -239,15 +245,9 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
 app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
-    const chatCheck = await db.execute({
-      sql: 'SELECT id FROM chats WHERE id = ? AND user_id = ?',
-      args: [chatId, req.user.id]
-    });
+    const chatCheck = await db.execute({ sql: 'SELECT id FROM chats WHERE id = ? AND user_id = ?', args: [chatId, req.user.id] });
     if (chatCheck.rows.length === 0) return res.status(403).json({ error: 'Доступ запрещён' });
-    const result = await db.execute({
-      sql: 'SELECT role, content, image_url FROM messages WHERE chat_id = ? ORDER BY id ASC',
-      args: [chatId]
-    });
+    const result = await db.execute({ sql: 'SELECT role, content, image_url FROM messages WHERE chat_id = ? ORDER BY id ASC', args: [chatId] });
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -271,10 +271,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       args: [chatId, 'user', message || 'Отправил(а) фото', imageUrlInDB]
     });
 
-    const countMsg = await db.execute({
-      sql: 'SELECT COUNT(*) as count FROM messages WHERE chat_id = ?',
-      args: [chatId]
-    });
+    const countMsg = await db.execute({ sql: 'SELECT COUNT(*) as count FROM messages WHERE chat_id = ?', args: [chatId] });
     if (countMsg.rows[0].count === 1) {
       const title = (message || 'Фото').slice(0, 30) + ((message || 'Фото').length > 30 ? '...' : '');
       await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
@@ -292,10 +289,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       return res.json({ reply: replyText, imageUrl: pollUrl });
     }
 
-    const historyResult = await db.execute({
-      sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20',
-      args: [chatId]
-    });
+    const historyResult = await db.execute({ sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20', args: [chatId] });
     const history = historyResult.rows.reverse().map(row => ({ role: row.role, content: row.content }));
 
     const userContent = imageBase64 
@@ -303,7 +297,15 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       : message;
 
     history[history.length - 1] = { role: 'user', content: userContent };
-    const messagesForAI = [ { role: 'system', content: 'Ты — БОБОР-AI, умный и дружелюбный ассистент. Отвечай на русском.' }, ...history ];
+    
+    // Получаем базу знаний от админа
+    const knowledgeRes = await db.execute('SELECT prompt_text FROM bot_knowledge ORDER BY id DESC LIMIT 1');
+    const adminPrompt = knowledgeRes.rows.length > 0 ? knowledgeRes.rows[0].prompt_text : 'Ты — БОБОР-AI, умный и дружелюбный ассистент. Отвечай на русском.';
+    
+    // Если админ задал свои инструкции, используем их, если нет — стандартные
+    const systemPrompt = adminPrompt.trim() !== '' ? adminPrompt : 'Ты — БОБОР-AI, умный и дружелюбный ассистент. Отвечай на русском.';
+
+    const messagesForAI = [ { role: 'system', content: systemPrompt }, ...history ];
 
     let model = imageFile ? 'glm-4.6v-flash' : 'glm-4.5-flash'; 
     
