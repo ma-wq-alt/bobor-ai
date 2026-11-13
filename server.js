@@ -76,7 +76,6 @@ async function initDB() {
       )
     `);
 
-    // Таблица чатов с полем pinned (закрепленные)
     await db.execute(`
       CREATE TABLE IF NOT EXISTS chats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -224,13 +223,10 @@ app.post('/api/bot/knowledge', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- УПРАВЛЕНИЕ ЧАТАМИ ---
+// --- ЧАТЫ ---
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
-    const result = await db.execute({ 
-      sql: 'SELECT * FROM chats WHERE user_id = ? ORDER BY pinned DESC, created_at DESC', 
-      args: [req.user.id] 
-    });
+    const result = await db.execute({ sql: 'SELECT * FROM chats WHERE user_id = ? ORDER BY pinned DESC, created_at DESC', args: [req.user.id] });
     res.json(result.rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -242,7 +238,6 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Удалить чат
 app.delete('/api/chats/:chatId', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
@@ -254,7 +249,6 @@ app.delete('/api/chats/:chatId', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Переименовать чат
 app.put('/api/chats/:chatId', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   const { title } = req.body;
@@ -266,7 +260,6 @@ app.put('/api/chats/:chatId', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Закрепить/открепить чат
 app.put('/api/chats/:chatId/pin', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
@@ -288,7 +281,7 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ОТПРАВКА СООБЩЕНИЙ (С ЗАЩИТОЙ ОТ 429) ---
+// --- ОТПРАВКА СООБЩЕНИЙ ---
 app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
   const { chatId } = req.params;
   const { message, mode } = req.body; 
@@ -356,8 +349,8 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       } catch (videoErr) { return res.json({ reply: '🎬 Не удалось сгенерировать видео: ' + videoErr.message }); }
     }
 
-    // 3. ПАМЯТЬ
-    if (message && !imageFile) {
+    // 3. ПАМЯТЬ (Улучшенная версия)
+    if (message && !imageFile && message.length > 10) {
       try {
         const memoryCheck = await fetchWithRetry('https://api.z.ai/api/paas/v4/chat/completions', {
           method: 'POST',
@@ -365,21 +358,23 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
           body: JSON.stringify({
             model: 'glm-4.5-flash',
             messages: [
-              { role: 'system', content: 'Извлеки факты о пользователе. Если есть важное (имя, хобби), напиши кратко. Если нет — "НЕТ".' },
+              { role: 'system', content: 'Ты — эксперт по извлечению информации. Выдели из сообщения пользователя все факты о нем (имя, возраст, город, хобби, любимые вещи). Напиши их через запятую. Если фактов нет, напиши "НЕТ".' },
               { role: 'user', content: message }
             ],
-            max_tokens: 50, temperature: 0
+            max_tokens: 100, temperature: 0
           })
         });
         const memData = await memoryCheck.json();
-        const fact = memData.choices[0].message.content.trim();
+        let fact = memData.choices[0].message.content.trim();
         
-        if (fact !== "НЕТ" && fact.length > 5) {
+        if (fact !== "НЕТ" && fact.length > 3) {
           const userRes = await db.execute({ sql: 'SELECT memory_facts FROM users WHERE id = ?', args: [req.user.id] });
           let currentFacts = userRes.rows[0].memory_facts || '';
+          
           if (!currentFacts.includes(fact)) {
-            const newFacts = currentFacts ? currentFacts + ' ' + fact : fact;
+            const newFacts = currentFacts ? currentFacts + '. ' + fact : fact;
             await db.execute({ sql: 'UPDATE users SET memory_facts = ? WHERE id = ?', args: [newFacts, req.user.id] });
+            console.log('🧠 Запомнил факт:', fact); // Это появится в логах Render!
           }
         }
       } catch (e) { console.log('Ошибка памяти:', e.message); }
