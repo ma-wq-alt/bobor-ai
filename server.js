@@ -3,11 +3,15 @@ const cors = require('cors');
 const { createClient } = require('@libsql/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '50mb' })); // Увеличили лимит для фото
+app.use(express.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
+
+// Настройка Multer для загрузки картинок в память
+const upload = multer({ storage: multer.memoryStorage() });
 
 // --- НАСТРОЙКА TURSO ---
 const db = createClient({
@@ -17,10 +21,9 @@ const db = createClient({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bobor-super-secret-key-123';
 
-// --- АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ТАБЛИЦ (Вместо ручного SQL) ---
+// --- АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ТАБЛИЦ ---
 async function initDB() {
   try {
-    // 1. Пользователи
     await db.execute(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,8 +33,6 @@ async function initDB() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
-    // 2. Чаты
     await db.execute(`
       CREATE TABLE IF NOT EXISTS chats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,8 +42,6 @@ async function initDB() {
         FOREIGN KEY(user_id) REFERENCES users(id)
       )
     `);
-
-    // 3. Сообщения
     await db.execute(`
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,15 +53,14 @@ async function initDB() {
         FOREIGN KEY(chat_id) REFERENCES chats(id)
       )
     `);
-    
-    console.log('✅ База данных инициализирована (таблицы созданы)');
+    console.log('✅ База данных инициализирована');
   } catch (err) {
     console.error('❌ Ошибка инициализации БД:', err.message);
   }
 }
 initDB();
 
-// --- MIDDLEWARE ДЛЯ ПРОВЕРКИ ТОКЕНА ---
+// --- MIDDLEWARE ---
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Нет токена' });
@@ -84,7 +82,6 @@ app.post('/api/register', async (req, res) => {
 
   try {
     const hash = await bcrypt.hash(password, 10);
-    // Первый пользователь автоматически становится админом
     const countRes = await db.execute('SELECT COUNT(*) as count FROM users');
     const isFirst = countRes.rows[0].count === 0;
     const role = isFirst ? 'admin' : 'user';
@@ -93,7 +90,6 @@ app.post('/api/register', async (req, res) => {
       sql: 'INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)',
       args: [username, hash, role]
     });
-
     res.json({ success: true, role });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'Логин занят' });
@@ -122,7 +118,7 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// --- ПОЛУЧИТЬ СПИСОК ЧАТОВ ПОЛЬЗОВАТЕЛЯ ---
+// --- СПИСОК ЧАТОВ ---
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({
@@ -135,7 +131,7 @@ app.get('/api/chats', authMiddleware, async (req, res) => {
   }
 });
 
-// --- СОЗДАТЬ НОВЫЙ ЧАТ ---
+// --- СОЗДАТЬ ЧАТ ---
 app.post('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({
@@ -148,11 +144,10 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
   }
 });
 
-// --- ПОЛУЧИТЬ ИСТОРИЮ КОНКРЕТНОГО ЧАТА ---
+// --- ИСТОРИЯ ЧАТА ---
 app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
-    // Проверяем, что чат принадлежит пользователю
     const chatCheck = await db.execute({
       sql: 'SELECT id FROM chats WHERE id = ? AND user_id = ?',
       args: [chatId, req.user.id]
@@ -169,32 +164,58 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   }
 });
 
-// --- ОТПРАВИТЬ СООБЩЕНИЕ В ЧАТ (С ВЫБОРОМ РЕЖИМА) ---
-app.post('/api/chats/:chatId/message', authMiddleware, async (req, res) => {
+// --- ОТПРАВКА СООБЩЕНИЯ (ТЕКСТ, ФОТО, ГЕНЕРАЦИЯ) ---
+app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
   const { chatId } = req.params;
-  const { message, mode } = req.body; // mode: 'weak', 'normal', 'strong'
+  const { message, mode } = req.body; 
+  const imageFile = req.file;
 
   try {
-    // 1. Сохраняем сообщение пользователя
+    let imageUrlInDB = null;
+    let imageBase64 = null;
+
+    if (imageFile) {
+      imageBase64 = `data:${imageFile.mimetype};base64,${imageFile.buffer.toString('base64')}`;
+      imageUrlInDB = "Прикреплено фото"; // Фронтенд не будет показывать эту строку как URL
+    }
+
+    // 1. Сохраняем вопрос пользователя
     await db.execute({
-      sql: 'INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)',
-      args: [chatId, 'user', message]
+      sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)',
+      args: [chatId, 'user', message || 'Отправил(а) фото', imageUrlInDB]
     });
 
-    // 2. Если это первое сообщение, обновляем название чата
+    // Обновляем название чата
     const countMsg = await db.execute({
       sql: 'SELECT COUNT(*) as count FROM messages WHERE chat_id = ?',
       args: [chatId]
     });
     if (countMsg.rows[0].count === 1) {
-      const title = message.slice(0, 30) + (message.length > 30 ? '...' : '');
+      const title = (message || 'Фото').slice(0, 30) + ((message || 'Фото').length > 30 ? '...' : '');
       await db.execute({
         sql: 'UPDATE chats SET title = ? WHERE id = ?',
         args: [title, chatId]
       });
     }
 
-    // 3. Достаем историю (последние 20 сообщений)
+    // 2. Генерация картинки, если просят нарисовать
+    const isDrawRequest = /нарисуй|сгенерируй|покажи картинку|создай изображение/i.test(message || '');
+
+    if (isDrawRequest && !imageFile) {
+      const prompt = message.replace(/нарисуй|сгенерируй|покажи картинку|создай изображение/gi, '').trim();
+      const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&nologo=true`;
+      
+      const replyText = `🎨 Вот твоя картинка по запросу: "${prompt}"`;
+      
+      await db.execute({
+        sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)',
+        args: [chatId, 'assistant', replyText, pollUrl]
+      });
+
+      return res.json({ reply: replyText, imageUrl: pollUrl });
+    }
+
+    // 3. Обычный запрос к DeepSeek (с фото или без)
     const historyResult = await db.execute({
       sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20',
       args: [chatId]
@@ -204,18 +225,32 @@ app.post('/api/chats/:chatId/message', authMiddleware, async (req, res) => {
       content: row.content
     }));
 
-    // 4. Настройка режима
-    let model = 'deepseek-chat';
-    let maxTokens = 1000;
-    if (mode === 'weak') { maxTokens = 300; }
-    if (mode === 'strong') { model = 'deepseek-reasoner'; maxTokens = 2000; } // Если у DeepSeek есть reasoning модель
+    const userContent = imageBase64 
+      ? [
+          { type: "text", text: message || "Что на этой картинке?" },
+          { type: "image_url", image_url: { url: imageBase64 } }
+        ]
+      : message;
+
+    history[history.length - 1] = { role: 'user', content: userContent };
 
     const messagesForAI = [
       { role: 'system', content: 'Ты — БОБОР-AI, умный и дружелюбный ассистент. Отвечай на русском.' },
       ...history
     ];
 
-    // 5. Запрос к DeepSeek
+    let model = 'deepseek-chat';
+    let maxTokens = 1000;
+    
+    if (imageFile) {
+      model = 'deepseek-vl'; // Модель для зрения
+    } else if (mode === 'weak') {
+      maxTokens = 300;
+    } else if (mode === 'strong') {
+      model = 'deepseek-reasoner'; 
+      maxTokens = 2000;
+    }
+
     const aiResponse = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: { 
@@ -230,11 +265,14 @@ app.post('/api/chats/:chatId/message', authMiddleware, async (req, res) => {
       })
     });
 
-    if (!aiResponse.ok) throw new Error(`DeepSeek: ${aiResponse.status}`);
+    if (!aiResponse.ok) {
+      const errorData = await aiResponse.json();
+      throw new Error(errorData.error?.message || `Ошибка API: ${aiResponse.status}`);
+    }
+    
     const aiData = await aiResponse.json();
     const replyText = aiData.choices[0].message.content;
 
-    // 6. Сохраняем ответ
     await db.execute({
       sql: 'INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)',
       args: [chatId, 'assistant', replyText]
@@ -245,18 +283,6 @@ app.post('/api/chats/:chatId/message', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Ошибка: ' + error.message });
-  }
-});
-
-// --- АДМИН: СТАТИСТИКА ---
-app.get('/api/admin/stats', authMiddleware, async (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
-  try {
-    const users = await db.execute('SELECT COUNT(*) as c FROM users');
-    const chats = await db.execute('SELECT COUNT(*) as c FROM chats');
-    res.json({ users: users.rows[0].c, chats: chats.rows[0].c });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
 });
 
