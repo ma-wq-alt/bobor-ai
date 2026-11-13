@@ -39,13 +39,7 @@ async function fetchWithRetry(url, options, retries = 3, delay = 3000) {
 
 async function initDB() {
   try {
-    try { await db.execute('SELECT theme FROM users LIMIT 1'); } 
-    catch (e) {
-      if (e.message.includes('no such column') || e.message.includes('no such table')) {
-        await db.execute('DROP TABLE IF EXISTS users');
-      }
-    }
-
+    // 1. Создаем базовую таблицу
     await db.execute(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,14 +51,31 @@ async function initDB() {
         otp_expires DATETIME,
         theme TEXT DEFAULT 'dark',
         language TEXT DEFAULT 'ru',
-        memory_facts TEXT DEFAULT '',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
     
+    // 2. АВТО-ДОБАВЛЕНИЕ ВСЕХ НУЖНЫХ КОЛОНОК (чтобы не было ошибок)
     try { await db.execute('SELECT memory_facts FROM users LIMIT 1'); } 
     catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE users ADD COLUMN memory_facts TEXT DEFAULT ""'); }
 
+    try { await db.execute('SELECT ai_free_left FROM users LIMIT 1'); } 
+    catch (e) { 
+      if (e.message.includes('no such column')) {
+        console.log('⚠️ Добавляем колонку ai_free_left...');
+        await db.execute('ALTER TABLE users ADD COLUMN ai_free_left INTEGER DEFAULT 20');
+      } 
+    }
+
+    try { await db.execute('SELECT ai_sub_until FROM users LIMIT 1'); } 
+    catch (e) { 
+      if (e.message.includes('no such column')) {
+        console.log('⚠️ Добавляем колонку ai_sub_until...');
+        await db.execute('ALTER TABLE users ADD COLUMN ai_sub_until DATETIME DEFAULT NULL');
+      } 
+    }
+
+    // 3. Остальные таблицы
     await db.execute(`CREATE TABLE IF NOT EXISTS bot_knowledge (id INTEGER PRIMARY KEY AUTOINCREMENT, prompt_text TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
     await db.execute(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, pinned INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))`);
     try { await db.execute('SELECT pinned FROM chats LIMIT 1'); } 
@@ -77,7 +88,7 @@ async function initDB() {
       const hash = await bcrypt.hash('1495', 10);
       await db.execute({ sql: 'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)', args: ['hank', adminEmail, hash, 'admin'] });
     }
-    console.log('✅ База данных готова');
+    console.log('✅ База данных готова (все колонки на месте)');
   } catch (err) { console.error('❌ Ошибка БД:', err.message); }
 }
 initDB();
