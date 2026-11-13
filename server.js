@@ -5,41 +5,38 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
+const WebSocket = require('ws');
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
 
-// Настройка Multer для загрузки картинок
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
-// Подключение к базе данных Turso
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL || 'file:local.db',
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bobor-super-secret-key-123';
+const BANK_WS_URL = process.env.BANK_URL || 'wss://bobor-bank.onrender.com';
 
-// Настройка почты для отправки кодов
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: { user: process.env.EMAIL_USER || '', pass: process.env.EMAIL_PASS || '' }
 });
 
-// Функция для повторной попытки при 429 (лимит запросов)
 async function fetchWithRetry(url, options, retries = 3, delay = 3000) {
   for (let i = 0; i < retries; i++) {
     const res = await fetch(url, options);
     if (res.status !== 429) return res;
-    console.log(`⚠️ 429 лимит, ждем ${delay}мс... (попытка ${i+1}/${retries})`);
+    console.log(`⚠️ 429 лимит, ждем ${delay}мс...`);
     await new Promise(resolve => setTimeout(resolve, delay));
   }
-  throw new Error('Превышен лимит запросов к Z.ai. Подожди минуту и попробуй снова.');
+  throw new Error('Превышен лимит запросов к Z.ai. Подожди минуту.');
 }
 
-// Инициализация базы данных (создание таблиц)
 async function initDB() {
   try {
     try { await db.execute('SELECT theme FROM users LIMIT 1'); } 
@@ -66,80 +63,33 @@ async function initDB() {
     `);
     
     try { await db.execute('SELECT memory_facts FROM users LIMIT 1'); } 
-    catch (e) {
-      if (e.message.includes('no such column')) {
-        await db.execute('ALTER TABLE users ADD COLUMN memory_facts TEXT DEFAULT ""');
-      }
-    }
+    catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE users ADD COLUMN memory_facts TEXT DEFAULT ""'); }
 
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS bot_knowledge (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        prompt_text TEXT NOT NULL,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS chats (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        title TEXT,
-        pinned INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-      )
-    `);
-    
+    await db.execute(`CREATE TABLE IF NOT EXISTS bot_knowledge (id INTEGER PRIMARY KEY AUTOINCREMENT, prompt_text TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+    await db.execute(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, pinned INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))`);
     try { await db.execute('SELECT pinned FROM chats LIMIT 1'); } 
-    catch (e) {
-      if (e.message.includes('no such column')) {
-        await db.execute('ALTER TABLE chats ADD COLUMN pinned INTEGER DEFAULT 0');
-      }
-    }
+    catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE chats ADD COLUMN pinned INTEGER DEFAULT 0'); }
+    await db.execute(`CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, image_url TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(chat_id) REFERENCES chats(id))`);
     
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        chat_id INTEGER NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        image_url TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(chat_id) REFERENCES chats(id)
-      )
-    `);
-    
-    // Создание админа
     const adminEmail = 'mar.maks999@gmail.com';
     const adminCheck = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [adminEmail] });
     if (adminCheck.rows.length === 0) {
       const hash = await bcrypt.hash('1495', 10);
-      await db.execute({
-        sql: 'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)',
-        args: ['hank', adminEmail, hash, 'admin']
-      });
-      console.log('✅ Админский аккаунт (hank) создан');
+      await db.execute({ sql: 'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)', args: ['hank', adminEmail, hash, 'admin'] });
     }
     console.log('✅ База данных готова');
   } catch (err) { console.error('❌ Ошибка БД:', err.message); }
 }
 initDB();
 
-// Проверка токена пользователя
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Нет токена' });
   const token = authHeader.split(' ')[1];
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch (err) { res.status(401).json({ error: 'Неверный токен' }); }
+  try { req.user = jwt.verify(token, JWT_SECRET); next(); } 
+  catch (err) { res.status(401).json({ error: 'Неверный токен' }); }
 }
 
-// --- МАРШРУТЫ АВТОРИЗАЦИИ ---
-
-// Вход по паролю
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
@@ -149,12 +99,11 @@ app.post('/api/login', async (req, res) => {
     if (!user || !user.password_hash) return res.status(401).json({ error: 'Неверный логин или пароль' });
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Неверный логин или пароль' });
-    const token = jwt.sign({ id: user.id, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, email: user.email, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, role: user.role, theme: user.theme || 'dark', language: user.language || 'ru' });
   } catch (err) { res.status(500).json({ error: 'Ошибка сервера' }); }
 });
 
-// Отправка кода на почту
 app.post('/api/send-code', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Введите почту' });
@@ -174,8 +123,7 @@ app.post('/api/send-code', async (req, res) => {
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       await transporter.sendMail({
         from: '"БОБОР ПРОДАКШН" <' + process.env.EMAIL_USER + '>',
-        to: email,
-        subject: 'БОБОР: Ваш код доступа',
+        to: email, subject: 'БОБОР: Ваш код доступа',
         html: `<div style="font-family: Arial; background: #0f0c29; color: #fff; padding: 20px; border-radius: 10px;"><h2>Ваш код: <b style="font-size: 24px; color: #a78bfa;">${otp}</b></h2></div>`
       });
       res.json({ success: true, message: 'Код отправлен на почту!' });
@@ -186,7 +134,6 @@ app.post('/api/send-code', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Ошибка отправки' }); }
 });
 
-// Проверка кода
 app.post('/api/verify-code', async (req, res) => {
   const { email, code } = req.body;
   try {
@@ -197,19 +144,16 @@ app.post('/api/verify-code', async (req, res) => {
     const now = new Date().toISOString();
     if (now > user.otp_expires) return res.status(401).json({ error: 'Код истек' });
     await db.execute({ sql: 'UPDATE users SET otp_code = NULL, otp_expires = NULL WHERE id = ?', args: [user.id] });
-    const token = jwt.sign({ id: user.id, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, email: user.email, username: user.username, role: user.role, theme: user.theme, language: user.language }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username, role: user.role, theme: user.theme || 'dark', language: user.language || 'ru' });
   } catch (err) { res.status(500).json({ error: 'Ошибка сервера' }); }
 });
 
-// --- МАРШРУТЫ НАСТРОЕК И БАЗЫ ЗНАНИЙ ---
-
-// Сохранение настроек профиля
 app.post('/api/user/settings', authMiddleware, async (req, res) => {
   const { username, theme, language } = req.body;
   try {
     await db.execute({ sql: 'UPDATE users SET username = ?, theme = ?, language = ? WHERE id = ?', args: [username, theme, language, req.user.id] });
-    const newToken = jwt.sign({ id: req.user.id, username, role: req.user.role, theme, language }, JWT_SECRET, { expiresIn: '7d' });
+    const newToken = jwt.sign({ id: req.user.id, email: req.user.email, username, role: req.user.role, theme, language }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ success: true, token: newToken, username, theme, language });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'Этот ник уже занят' });
@@ -217,7 +161,6 @@ app.post('/api/user/settings', authMiddleware, async (req, res) => {
   }
 });
 
-// Получение базы знаний (только админ)
 app.get('/api/bot/knowledge', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
   try {
@@ -226,7 +169,6 @@ app.get('/api/bot/knowledge', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Сохранение базы знаний (только админ)
 app.post('/api/bot/knowledge', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
   const { prompt } = req.body;
@@ -237,9 +179,6 @@ app.post('/api/bot/knowledge', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- МАРШРУТЫ ЧАТОВ ---
-
-// Получить список чатов (с сортировкой закрепленных)
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({ sql: 'SELECT * FROM chats WHERE user_id = ? ORDER BY pinned DESC, created_at DESC', args: [req.user.id] });
@@ -247,7 +186,6 @@ app.get('/api/chats', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Создать новый чат
 app.post('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({ sql: 'INSERT INTO chats (user_id, title) VALUES (?, ?) RETURNING id', args: [req.user.id, 'Новый чат'] });
@@ -255,7 +193,6 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Удалить чат
 app.delete('/api/chats/:chatId', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
@@ -267,7 +204,6 @@ app.delete('/api/chats/:chatId', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Переименовать чат
 app.put('/api/chats/:chatId', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   const { title } = req.body;
@@ -279,7 +215,6 @@ app.put('/api/chats/:chatId', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Закрепить/открепить чат
 app.put('/api/chats/:chatId/pin', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
@@ -291,7 +226,6 @@ app.put('/api/chats/:chatId/pin', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Получить сообщения конкретного чата
 app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   const { chatId } = req.params;
   try {
@@ -302,7 +236,45 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ОТПРАВКА СООБЩЕНИЙ (ГЛАВНАЯ ЛОГИКА) ---
+app.post('/api/pay_sub', authMiddleware, async (req, res) => {
+  const userEmail = req.user.email;
+  if (!userEmail) return res.status(400).json({ error: 'Email не найден' });
+
+  try {
+    const ws = new WebSocket(BANK_WS_URL);
+    
+    ws.on('open', () => {
+      ws.send(JSON.stringify({ type: 'buy_sub_ai', email: userEmail }));
+    });
+
+    ws.on('message', (data) => {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === 'error') {
+        ws.close();
+        return res.status(400).json({ success: false, error: msg.message });
+      }
+      if (msg.type === 'toast') {
+        ws.close();
+        return res.json({ success: true, message: msg.message });
+      }
+    });
+
+    ws.on('error', (err) => {
+      console.error('Ошибка WebSocket Банка:', err);
+      res.status(500).json({ success: false, error: 'Банк недоступен. Попробуйте позже.' });
+    });
+
+    setTimeout(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
+        if (!res.headersSent) res.status(504).json({ success: false, error: 'Банк не ответил вовремя.' });
+      }
+    }, 10000);
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка соединения с Банком' });
+  }
+});
+
 app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
   const { chatId } = req.params;
   const { message, mode } = req.body; 
@@ -317,7 +289,6 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       imageUrlInDB = "Прикреплено фото";
     }
 
-    // Сохраняем сообщение пользователя в БД
     await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'user', message || 'Отправил(а) фото', imageUrlInDB] });
 
     const countMsg = await db.execute({ sql: 'SELECT COUNT(*) as count FROM messages WHERE chat_id = ?', args: [chatId] });
@@ -326,7 +297,6 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
     }
 
-    // 1. ГЕНЕРАЦИЯ КАРТИНКИ
     const isDrawRequest = /нарисуй|сгенерируй|покажи картинку|создай изображение/i.test(message || '');
     if (isDrawRequest && !imageFile) {
       const prompt = message.replace(/нарисуй|сгенерируй|покажи картинку|создай изображение|мне|пожалуйста/gi, '').trim();
@@ -336,7 +306,6 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       return res.json({ reply: replyText, imageUrl: pollUrl });
     }
 
-    // 2. ГЕНЕРАЦИЯ ВИДЕО
     if (/видео|video/i.test(message || '')) {
       const prompt = message.replace(/видео|video|сгенерируй|создай|сделай/gi, '').trim();
       if (!prompt) return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать.' });
@@ -371,7 +340,6 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       } catch (videoErr) { return res.json({ reply: '🎬 Не удалось сгенерировать видео: ' + videoErr.message }); }
     }
 
-    // 3. ИЗВЛЕЧЕНИЕ ПАМЯТИ (RAG)
     if (message && !imageFile && message.length > 10) {
       try {
         const memoryCheck = await fetchWithRetry('https://api.z.ai/api/paas/v4/chat/completions', {
@@ -401,7 +369,6 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       } catch (e) { console.log('Ошибка памяти:', e.message); }
     }
 
-    // 4. ЗАПРОС К ТЕКСТОВОЙ МОДЕЛИ
     const historyResult = await db.execute({ sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20', args: [chatId] });
     const history = historyResult.rows.reverse().map(row => ({ role: row.role, content: row.content }));
 
@@ -435,6 +402,5 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
   } catch (error) { res.status(500).json({ error: 'Ошибка: ' + error.message }); }
 });
 
-// Запуск сервера
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🦫 Бобор-AI запущен на порту ${PORT}`));
