@@ -40,7 +40,6 @@
   * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; transition: background-color 0.3s, color 0.3s, border-color 0.3s; }
   body { background: var(--bg-main); color: var(--text-main); height: 100vh; display: flex; overflow: hidden; }
 
-  /* ЭКРАН ВХОДА */
   #auth-screen { position: fixed; inset: 0; background: var(--bg-main); display: flex; justify-content: center; align-items: center; z-index: 100; }
   .auth-box { background: var(--sidebar-bg); padding: 40px; border-radius: 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); width: 400px; text-align: center; border: 1px solid var(--border); }
   .auth-box h2 { margin-bottom: 25px; font-size: 26px; font-weight: 700; }
@@ -54,7 +53,6 @@
   .auth-msg { font-size: 14px; color: var(--danger); margin-top: 10px; min-height: 20px; }
   .timer-text { font-size: 12px; color: var(--text-muted); margin-top: 5px; }
 
-  /* ОСНОВНОЙ ИНТЕРФЕЙС */
   #main-app { display: none; width: 100%; height: 100vh; }
   .sidebar { width: 260px; background: var(--sidebar-bg); display: flex; flex-direction: column; border-right: 1px solid var(--border); }
   .sidebar-header { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
@@ -71,11 +69,6 @@
   .chat-item.pinned { border-left: 3px solid var(--primary); }
   .chat-item .chat-menu { display: none; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 0 5px; }
   .chat-item:hover .chat-menu { display: block; }
-  
-  .chat-menu-dropdown { position: fixed; background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000; min-width: 140px; }
-  .chat-menu-dropdown div { padding: 10px 15px; cursor: pointer; font-size: 13px; color: var(--text-main); }
-  .chat-menu-dropdown div:hover { background: var(--border); }
-  .chat-menu-dropdown .danger { color: var(--danger); }
 
   /* БЛОК ЛИМИТОВ */
   .sub-block { background: var(--bg-main); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 10px; text-align: center; }
@@ -94,86 +87,55 @@
   .btn-logout { color: var(--danger) !important; border-color: var(--danger) !important; }
   .btn-logout:hover { background: rgba(239, 68, 68, 0.1) !important; }
 
-  /* ЧАТ */
   .chat-area { flex: 1; display: flex; flex-direction: column; background: var(--chat-bg); }
   .chat-header { padding: 15px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
   .chat-title { font-weight: 600; font-size: 16px; }
-  .header-actions { display: flex; gap: 10px; }
-  .icon-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; padding: 5px 10px; border-radius: 8px; }
-  .icon-btn:hover { background: var(--border); color: var(--text-main); }
-
   .messages { flex: 1; padding: 20px 10%; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
-  .messages::-webkit-scrollbar { width: 6px; }
-  .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
-  
   .msg-row { display: flex; gap: 16px; max-width: 100%; animation: slideUp 0.3s ease-out; }
   .msg-row.user { flex-direction: row-reverse; }
   .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 14px; font-weight: 600; flex-shrink: 0; background: var(--border); color: var(--text-main); }
   .msg-row.bot .avatar { background: var(--primary); color: #fff; }
-  .msg-content { padding: 12px 18px; border-radius: 16px; line-height: 1.6; font-size: 15px; max-width: 85%; word-wrap: break-word; overflow-wrap: break-word; }
+  .msg-content { padding: 12px 18px; border-radius: 16px; line-height: 1.6; font-size: 15px; max-width: 85%; word-wrap: break-word; }
   .msg-row.bot .msg-content { background: var(--msg-bot-bg); border-top-left-radius: 4px; }
   .msg-row.user .msg-content { background: var(--msg-user-bg); color: #fff; border-top-right-radius: 4px; }
   .msg-content img, .msg-content video { max-width: 100%; border-radius: 12px; margin-top: 10px; display: block; }
   
-  .msg-content p { margin-bottom: 8px; }
-  .msg-content p:last-child { margin-bottom: 0; }
-  .msg-content strong { font-weight: 700; color: var(--primary); }
-  .msg-row.user .msg-content strong { color: #fff; }
-  .msg-content ul, .msg-content ol { margin-left: 20px; margin-bottom: 8px; }
-  .msg-content li { margin-bottom: 4px; }
-  .msg-content code { background: rgba(0,0,0,0.2); padding: 2px 4px; border-radius: 4px; font-family: monospace; font-size: 14px; }
-  
-  .copy-btn, .edit-btn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; margin-top: 8px; margin-right: 5px; float: right; }
-  .copy-btn:hover, .edit-btn:hover { background: var(--border); color: var(--text-main); }
-
   .typing-indicator { display: flex; gap: 4px; padding: 12px 18px; background: var(--msg-bot-bg); border-radius: 16px; border-top-left-radius: 4px; width: fit-content; align-items: center; }
   .typing-indicator span { width: 6px; height: 6px; background: var(--text-muted); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
   .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
   .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
   @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
 
-  /* ПАНЕЛЬ ВВОДА */
   .input-panel { padding: 20px 10% 30px; background: linear-gradient(to top, var(--chat-bg) 70%, transparent); }
   .mode-selector { display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; }
-  .mode-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--sidebar-bg); color: var(--text-muted); cursor: pointer; font-size: 12px; font-weight: 500; }
-  .mode-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .mode-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--sidebar-bg); color: var(--text-muted); cursor: pointer; font-size: 12px; }
   .mode-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
-  
   .input-row { display: flex; gap: 10px; background: var(--input-bg); padding: 10px; border-radius: 16px; border: 1px solid var(--border); align-items: center; }
-  .input-row:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
-  .input-row input[type="text"] { flex: 1; background: transparent; border: none; color: var(--text-main); font-size: 16px; outline: none; padding: 5px; }
-  .btn-send { background: var(--primary); border: none; border-radius: 10px; color: #fff; width: 40px; height: 40px; cursor: pointer; display: flex; justify-content: center; align-items: center; font-size: 18px; }
-  .btn-send:hover { background: var(--primary-hover); }
-  .btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn-attach { background: transparent; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 0 10px; display: flex; align-items: center; }
-  .btn-attach:hover { color: var(--text-main); }
+  .input-row input[type="text"] { flex: 1; background: transparent; border: none; color: var(--text-main); font-size: 16px; outline: none; }
+  .btn-send { background: var(--primary); border: none; border-radius: 10px; color: #fff; width: 40px; height: 40px; cursor: pointer; }
+  .btn-attach { background: transparent; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 0 10px; }
 
-  /* МОДАЛЬНЫЕ ОКНА */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: none; justify-content: center; align-items: center; z-index: 1000; }
-  .modal { background: var(--sidebar-bg); padding: 30px; border-radius: 20px; width: 420px; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+  .modal { background: var(--sidebar-bg); padding: 30px; border-radius: 20px; width: 420px; border: 1px solid var(--border); }
   .modal h3 { margin-bottom: 20px; font-size: 20px; }
   .form-group { margin-bottom: 20px; }
-  .form-group label { display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 13px; font-weight: 500; }
+  .form-group label { display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 13px; }
   .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-main); color: var(--text-main); font-size: 14px; outline: none; }
-  .form-group textarea { resize: vertical; min-height: 120px; }
   .modal-actions { display: flex; gap: 10px; margin-top: 25px; }
-  .modal-actions button { flex: 1; padding: 12px; border-radius: 10px; font-weight: 600; font-size: 14px; cursor: pointer; border: none; }
+  .modal-actions button { flex: 1; padding: 12px; border-radius: 10px; font-weight: 600; cursor: pointer; border: none; }
   .btn-cancel { background: var(--border); color: var(--text-main); }
   .btn-save { background: var(--primary); color: #fff; }
 
-  /* Меню 3 точки */
-  .dropdown { position: relative; display: inline-block; }
-  .dropdown-content { display: none; position: absolute; right: 0; top: 100%; background: var(--sidebar-bg); min-width: 160px; box-shadow: 0 8px 16px rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border); z-index: 10; overflow: hidden; }
-  .dropdown-content a { color: var(--text-main); padding: 12px 16px; text-decoration: none; display: block; font-size: 14px; cursor: pointer; }
-  .dropdown-content a:hover { background: var(--border); }
-  .dropdown:hover .dropdown-content { display: block; }
+  .chat-menu-dropdown { position: fixed; background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000; min-width: 140px; }
+  .chat-menu-dropdown div { padding: 10px 15px; cursor: pointer; font-size: 13px; color: var(--text-main); }
+  .chat-menu-dropdown div:hover { background: var(--border); }
+  .chat-menu-dropdown .danger { color: var(--danger); }
 
   @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 </head>
 <body>
 
-<!-- ЭКРАН ВХОДА -->
 <div id="auth-screen">
   <div class="auth-box">
     <h2>БОБОР-AI</h2>
@@ -199,7 +161,6 @@
   </div>
 </div>
 
-<!-- МОДАЛЬНЫЕ ОКНА -->
 <div class="modal-overlay" id="settingsModal">
   <div class="modal">
     <h3>Настройки</h3>
@@ -218,7 +179,6 @@
   </div>
 </div>
 
-<!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
 <div id="main-app">
   <div class="sidebar">
     <div class="sidebar-header">
@@ -227,7 +187,6 @@
     </div>
     <div class="chat-list" id="chatList"></div>
 
-    <!-- БЛОК ЛИМИТОВ И ОПЛАТЫ -->
     <div class="sub-block">
       <h4>Бесплатные запросы</h4>
       <div class="progress-bar"><div class="progress-fill" id="freeProgress" style="width: 100%;"></div></div>
@@ -248,23 +207,12 @@
     <div class="chat-header">
       <div class="chat-title">Бобор-AI</div>
       <div class="header-actions">
-        <div class="dropdown">
-          <button class="icon-btn">⋮</button>
-          <div class="dropdown-content">
-            <a onclick="openSettings()">Настройки</a>
-            <a onclick="logout()" style="color: var(--danger);">Выйти</a>
-          </div>
-        </div>
+        <button class="icon-btn" onclick="logout()">Выйти</button>
       </div>
     </div>
-
     <div class="messages" id="messages">
-      <div class="msg-row bot">
-        <div class="avatar">AI</div>
-        <div class="msg-content" id="welcomeMsg">Привет! Я Бобор-AI. Чем могу помочь?</div>
-      </div>
+      <div class="msg-row bot"><div class="avatar">AI</div><div class="msg-content">Привет! Я Бобор-AI.</div></div>
     </div>
-    
     <div class="input-panel">
       <div class="mode-selector">
         <button class="mode-btn" data-mode="weak" onclick="setMode('weak')">Слабый</button>
@@ -391,7 +339,7 @@
   }
 
   function redirectToBank() {
-    window.location.href = 'https://bobor-bank.onrender.com?pay_ai=true';
+    window.location.href = 'https://bobor-bank.onrender.com/?pay_ai=true';
   }
 
   function initApp() {
