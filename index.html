@@ -2,9 +2,8 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>БОБОР-AI (с памятью)</title>
+<title>БОБОР-AI</title>
 <style>
-  /* ... (вставьте сюда все стили из предыдущего сообщения) ... */
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); min-height: 100vh; display: flex; justify-content: center; align-items: center; color: #fff; }
   .container { width: 100%; max-width: 700px; height: 90vh; background: rgba(20, 20, 40, 0.85); border-radius: 20px; box-shadow: 0 0 40px rgba(120, 80, 255, 0.5); display: flex; flex-direction: column; overflow: hidden; border: 1px solid rgba(150, 120, 255, 0.3); }
@@ -37,7 +36,7 @@
 <div class="container">
   <header>
     <div class="logo">🦫</div>
-    <h1>БОБОР-AI (Turso Memory)</h1>
+    <h1>БОБОР-AI (DeepSeek Core)</h1>
     <div class="status"><span class="dot"></span> Online</div>
   </header>
   <div class="chat" id="chat"></div>
@@ -53,15 +52,12 @@
   const sendBtn = document.getElementById('sendBtn');
   const typing = document.getElementById('typing');
 
-  // Загрузка истории из базы (Turso) при старте
   async function loadHistory() {
     try {
       const res = await fetch('/api/history');
       const history = await res.json();
       history.forEach(msg => addMessage(msg.content, msg.role === 'user' ? 'user' : 'bot'));
-    } catch (e) {
-      console.log('История пуста или сервер недоступен');
-    }
+    } catch (e) { console.log('История пуста'); }
   }
 
   function addMessage(text, sender) {
@@ -79,7 +75,6 @@
   async function sendMessage() {
     const text = input.value.trim();
     if (!text) return;
-
     addMessage(text, 'user');
     input.value = '';
     sendBtn.disabled = true;
@@ -93,11 +88,8 @@
         body: JSON.stringify({ message: text })
       });
       const data = await res.json();
-      if (data.reply) {
-        addMessage(data.reply, 'bot');
-      } else {
-        throw new Error(data.error || 'Ошибка');
-      }
+      if (data.reply) addMessage(data.reply, 'bot');
+      else throw new Error(data.error || 'Ошибка');
     } catch (err) {
       addMessage('Ошибка: ' + err.message, 'bot');
     } finally {
@@ -109,8 +101,7 @@
 
   sendBtn.addEventListener('click', sendMessage);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
-  
-  loadHistory(); // Запускаем загрузку истории
+  loadHistory();
 </script>
 </body>
 </html>
