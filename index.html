@@ -7,11 +7,40 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
-  :root { --bg-main: #0b0f19; --sidebar-bg: #111827; --chat-bg: #0b0f19; --primary: #6366f1; --primary-hover: #4f46e5; --primary-glow: rgba(99, 102, 241, 0.3); --text-main: #f3f4f6; --text-muted: #9ca3af; --border: #1f2937; --msg-bot-bg: #1f2937; --msg-user-bg: #4f46e5; --input-bg: #111827; --danger: #ef4444; --success: #10b981; }
-  body.light-theme { --bg-main: #f9fafb; --sidebar-bg: #ffffff; --chat-bg: #ffffff; --primary: #4f46e5; --primary-hover: #4338ca; --primary-glow: rgba(79, 70, 229, 0.15); --text-main: #111827; --text-muted: #6b7280; --border: #e5e7eb; --msg-bot-bg: #f3f4f6; --msg-user-bg: #4f46e5; --input-bg: #f3f4f6; }
+  :root {
+    --bg-main: #0b0f19;
+    --sidebar-bg: #111827;
+    --chat-bg: #0b0f19;
+    --primary: #6366f1;
+    --primary-hover: #4f46e5;
+    --primary-glow: rgba(99, 102, 241, 0.3);
+    --text-main: #f3f4f6;
+    --text-muted: #9ca3af;
+    --border: #1f2937;
+    --msg-bot-bg: #1f2937;
+    --msg-user-bg: #4f46e5;
+    --input-bg: #111827;
+    --danger: #ef4444;
+    --success: #10b981;
+  }
+  body.light-theme {
+    --bg-main: #f9fafb;
+    --sidebar-bg: #ffffff;
+    --chat-bg: #ffffff;
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --primary-glow: rgba(79, 70, 229, 0.15);
+    --text-main: #111827;
+    --text-muted: #6b7280;
+    --border: #e5e7eb;
+    --msg-bot-bg: #f3f4f6;
+    --msg-user-bg: #4f46e5;
+    --input-bg: #f3f4f6;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; transition: background-color 0.3s, color 0.3s, border-color 0.3s; }
   body { background: var(--bg-main); color: var(--text-main); height: 100vh; display: flex; overflow: hidden; }
 
+  /* ЭКРАН ВХОДА */
   #auth-screen { position: fixed; inset: 0; background: var(--bg-main); display: flex; justify-content: center; align-items: center; z-index: 100; }
   .auth-box { background: var(--sidebar-bg); padding: 40px; border-radius: 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); width: 400px; text-align: center; border: 1px solid var(--border); }
   .auth-box h2 { margin-bottom: 25px; font-size: 26px; font-weight: 700; }
@@ -25,6 +54,7 @@
   .auth-msg { font-size: 14px; color: var(--danger); margin-top: 10px; min-height: 20px; }
   .timer-text { font-size: 12px; color: var(--text-muted); margin-top: 5px; }
 
+  /* ОСНОВНОЙ ИНТЕРФЕЙС */
   #main-app { display: none; width: 100%; height: 100vh; }
   .sidebar { width: 260px; background: var(--sidebar-bg); display: flex; flex-direction: column; border-right: 1px solid var(--border); }
   .sidebar-header { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
@@ -47,9 +77,11 @@
   .chat-menu-dropdown div:hover { background: var(--border); }
   .chat-menu-dropdown .danger { color: var(--danger); }
 
-  /* Стили для подписки */
-  .sub-block { background: var(--bg-main); border: 1px solid var(--primary); border-radius: 8px; padding: 12px; margin: 10px; text-align: center; }
-  .sub-block h4 { margin-bottom: 5px; color: var(--primary); font-size: 14px; }
+  /* БЛОК ЛИМИТОВ */
+  .sub-block { background: var(--bg-main); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 10px; text-align: center; }
+  .sub-block h4 { margin-bottom: 5px; color: var(--text-main); font-size: 13px; }
+  .progress-bar { width: 100%; height: 6px; background: var(--border); border-radius: 3px; margin: 8px 0; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.3s; }
   .sub-block p { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
   .btn-buy-sub { width: 100%; padding: 8px; background: var(--success); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; }
   .btn-buy-sub:hover { background: #059669; }
@@ -62,6 +94,7 @@
   .btn-logout { color: var(--danger) !important; border-color: var(--danger) !important; }
   .btn-logout:hover { background: rgba(239, 68, 68, 0.1) !important; }
 
+  /* ЧАТ */
   .chat-area { flex: 1; display: flex; flex-direction: column; background: var(--chat-bg); }
   .chat-header { padding: 15px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
   .chat-title { font-weight: 600; font-size: 16px; }
@@ -99,6 +132,7 @@
   .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
   @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
 
+  /* ПАНЕЛЬ ВВОДА */
   .input-panel { padding: 20px 10% 30px; background: linear-gradient(to top, var(--chat-bg) 70%, transparent); }
   .mode-selector { display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; }
   .mode-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--sidebar-bg); color: var(--text-muted); cursor: pointer; font-size: 12px; font-weight: 500; }
@@ -114,6 +148,7 @@
   .btn-attach { background: transparent; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 0 10px; display: flex; align-items: center; }
   .btn-attach:hover { color: var(--text-main); }
 
+  /* МОДАЛЬНЫЕ ОКНА */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: none; justify-content: center; align-items: center; z-index: 1000; }
   .modal { background: var(--sidebar-bg); padding: 30px; border-radius: 20px; width: 420px; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
   .modal h3 { margin-bottom: 20px; font-size: 20px; }
@@ -126,6 +161,7 @@
   .btn-cancel { background: var(--border); color: var(--text-main); }
   .btn-save { background: var(--primary); color: #fff; }
 
+  /* Меню 3 точки */
   .dropdown { position: relative; display: inline-block; }
   .dropdown-content { display: none; position: absolute; right: 0; top: 100%; background: var(--sidebar-bg); min-width: 160px; box-shadow: 0 8px 16px rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border); z-index: 10; overflow: hidden; }
   .dropdown-content a { color: var(--text-main); padding: 12px 16px; text-decoration: none; display: block; font-size: 14px; cursor: pointer; }
@@ -191,11 +227,12 @@
     </div>
     <div class="chat-list" id="chatList"></div>
 
-    <!-- БЛОК ПОДПИСКИ -->
+    <!-- БЛОК ЛИМИТОВ И ОПЛАТЫ -->
     <div class="sub-block">
-      <h4>Подписка PRO</h4>
-      <p>100 TTFBL / 30 дней</p>
-      <button class="btn-buy-sub" onclick="paySubscription()">Оплатить из Банка</button>
+      <h4>Бесплатные запросы</h4>
+      <div class="progress-bar"><div class="progress-fill" id="freeProgress" style="width: 100%;"></div></div>
+      <p id="freeText">Осталось: 20</p>
+      <button class="btn-buy-sub" onclick="redirectToBank()">Оплатить PRO</button>
     </div>
 
     <div class="user-info">
@@ -337,6 +374,26 @@
 
   function logout() { localStorage.clear(); location.reload(); }
 
+  async function updateLimits() {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/user/limits', { headers: { 'Authorization': `Bearer ${token}` } });
+      const data = await res.json();
+      if (data.ai_free_left !== undefined) {
+        const left = Math.max(0, data.ai_free_left);
+        document.getElementById('freeText').textContent = `Осталось: ${left}`;
+        document.getElementById('freeProgress').style.width = `${(left / 20) * 100}%`;
+        if (left <= 0) {
+          document.getElementById('freeText').style.color = 'var(--danger)';
+        }
+      }
+    } catch (e) { console.log(e); }
+  }
+
+  function redirectToBank() {
+    window.location.href = 'https://bobor-bank.onrender.com?pay_ai=true';
+  }
+
   function initApp() {
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('main-app').style.display = 'flex';
@@ -346,6 +403,7 @@
       checkTrainStatus();
     }
     loadChats();
+    updateLimits();
   }
 
   if (token) initApp();
@@ -369,25 +427,6 @@
   function openSettings() { document.getElementById('settingNickname').value = currentUser; document.getElementById('settingTheme').value = currentTheme; document.getElementById('settingsModal').style.display = 'flex'; }
   function closeSettings() { document.getElementById('settingsModal').style.display = 'none'; }
   async function saveSettings() { const newNick = document.getElementById('settingNickname').value; const newTheme = document.getElementById('settingTheme').value; const res = await fetch('/api/user/settings', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ username: newNick, theme: newTheme, language: 'ru' }) }); const data = await res.json(); if (res.ok) { localStorage.setItem('token', data.token); localStorage.setItem('username', data.username); localStorage.setItem('theme', data.theme); location.reload(); } else { alert(data.error); } }
-
-  // ОПЛАТА ПОДПИСКИ
-  async function paySubscription() {
-    if (!confirm('Списать 100 TTFBL с вашего счета в Банке?')) return;
-    try {
-      const res = await fetch('/api/pay_sub', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        alert('✅ ' + data.message);
-      } else {
-        alert('❌ Ошибка: ' + (data.error || 'Неизвестная ошибка'));
-      }
-    } catch (err) {
-      alert('❌ Ошибка соединения с сервером');
-    }
-  }
 
   async function loadChats() {
     const res = await fetch('/api/chats', { headers: { 'Authorization': `Bearer ${token}` } });
@@ -520,8 +559,8 @@
       document.getElementById('btnSend').style.display = 'flex';
       document.getElementById('btnStop').style.display = 'none';
 
-      if (res.ok) { addMessageToUI(data.reply, 'bot', data.imageUrl); loadChats(); } 
-      else { addMessageToUI('Ошибка: ' + data.error, 'bot'); }
+      if (res.ok) { addMessageToUI(data.reply, 'bot', data.imageUrl); loadChats(); updateLimits(); } 
+      else { addMessageToUI('Ошибка: ' + data.error, 'bot'); updateLimits(); }
     } catch (err) { 
       if (err.name === 'AbortError') {
         addMessageToUI('Генерация остановлена.', 'bot');
@@ -531,6 +570,7 @@
       removeTypingIndicator();
       document.getElementById('btnSend').style.display = 'flex';
       document.getElementById('btnStop').style.display = 'none';
+      updateLimits();
     }
   }
 
