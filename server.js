@@ -13,7 +13,6 @@ app.use(express.static(__dirname));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// --- НАСТРОЙКА TURSO ---
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL || 'file:local.db',
   authToken: process.env.TURSO_AUTH_TOKEN,
@@ -21,7 +20,6 @@ const db = createClient({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bobor-super-secret-key-123';
 
-// --- НАСТРОЙКА ПОЧТЫ (Для кодов) ---
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -32,6 +30,18 @@ const transporter = nodemailer.createTransport({
 
 async function initDB() {
   try {
+    // --- УМНАЯ ПРОВЕРКА: Есть ли колонка email? ---
+    try {
+      // Пытаемся сделать запрос. Если колонки нет, выскочит ошибка.
+      await db.execute('SELECT email FROM users LIMIT 1');
+    } catch (e) {
+      // Если ошибка "no such column", значит таблица старая. Удаляем её.
+      if (e.message.includes('no such column') || e.message.includes('no such table')) {
+        console.log('⚠️ Обнаружена старая таблица users. Обновляем структуру...');
+        await db.execute('DROP TABLE IF EXISTS users');
+      }
+    }
+
     await db.execute(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,12 +75,8 @@ async function initDB() {
       )
     `);
     
-    // --- СОЗДАЕМ АДМИНА ПРИ СТАРТЕ ---
     const adminEmail = 'mar.maks999@gmail.com';
-    const adminCheck = await db.execute({
-      sql: 'SELECT id FROM users WHERE email = ?',
-      args: [adminEmail]
-    });
+    const adminCheck = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [adminEmail] });
     if (adminCheck.rows.length === 0) {
       const hash = await bcrypt.hash('1495', 10);
       await db.execute({
@@ -79,11 +85,7 @@ async function initDB() {
       });
       console.log('✅ Админский аккаунт (hank) создан автоматически');
     } else {
-      // Обновляем роль на всякий случай
-      await db.execute({
-        sql: 'UPDATE users SET role = ? WHERE email = ?',
-        args: ['admin', adminEmail]
-      });
+      await db.execute({ sql: 'UPDATE users SET role = ? WHERE email = ?', args: ['admin', adminEmail] });
     }
     
     console.log('✅ База данных инициализирована');
@@ -106,33 +108,6 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// --- ОБЫЧНЫЙ ВХОД / РЕГИСТРАЦИЯ ---
-app.post('/api/register', async (req, res) => {
-  const { username, password, email } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
-  try {
-    const hash = await bcrypt.hash(password, 10);
-    
-    const check = await db.execute({
-      sql: 'SELECT id FROM users WHERE username = ? OR email = ?',
-      args: [username, email || '']
-    });
-    if (check.rows.length > 0) return res.status(400).json({ error: 'Логин или почта уже заняты' });
-
-    const countRes = await db.execute('SELECT COUNT(*) as count FROM users');
-    const isFirst = countRes.rows[0].count === 0;
-    const role = isFirst ? 'admin' : 'user';
-
-    await db.execute({
-      sql: 'INSERT INTO users (username, password_hash, email, role) VALUES (?, ?, ?, ?)',
-      args: [username, hash, email || null, role]
-    });
-    res.json({ success: true, role });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -153,7 +128,6 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// --- ВХОД ПО КОДУ (OTP) ---
 app.post('/api/send-code', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Введите почту' });
@@ -166,7 +140,7 @@ app.post('/api/send-code', async (req, res) => {
     let user = userRes.rows[0];
 
     if (!user) {
-      const baseUsername = email.split('@')[0] + Math.floor(Math.random() * 1000);
+      const baseUsername = email.split('@')[0] + Math.floor(Math.random() * 100);
       await db.execute({
         sql: 'INSERT INTO users (email, username, role, otp_code, otp_expires) VALUES (?, ?, ?, ?, ?)',
         args: [email, baseUsername, 'user', otp, expires]
@@ -178,25 +152,32 @@ app.post('/api/send-code', async (req, res) => {
       });
     }
 
-    // Пытаемся отправить на почту, если настроены переменные
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       await transporter.sendMail({
-        from: '"БОБОР-AI" <' + process.env.EMAIL_USER + '>',
+        from: '"БОБОР ПРОДАКШН" <' + process.env.EMAIL_USER + '>',
         to: email,
-        subject: 'Код для входа в БОБОР-AI',
-        text: `Твой код для входа: ${otp}. Никому его не говори!`,
-        html: `<h2>Твой код: <b>${otp}</b></h2>`
+        subject: 'БОБОР ПРОДАКШН: Ваш код доступа',
+        text: `В начале ваш код: ${otp}. Это ваш код от Бобор Продакшн. Никому его не говорите!`,
+        html: `
+          <div style="font-family: Arial, sans-serif; background: #0f0c29; color: #fff; padding: 20px; border-radius: 10px;">
+            <h2 style="color: #a78bfa;">🦫 БОБОР ПРОДАКШН</h2>
+            <p style="font-size: 16px;">Привет! Ты запросил код для входа.</p>
+            <p style="font-size: 16px;">В начале ваш код: <b style="font-size: 24px; color: #c4b5fd;">${otp}</b></p>
+            <p style="font-size: 14px; color: #999;">Никому его не говорите. Код действует 10 минут.</p>
+          </div>
+        `
       });
       res.json({ success: true, message: 'Код отправлен на почту!' });
     } else {
-      // Если почта не настроена, выводим код в консоль Render
       console.log(`\n\n========================================`);
-      console.log(`[ТЕСТ] Код для входа ${email}: ${otp}`);
+      console.log(`🚀 БОБОР ПРОДАКШН: НОВЫЙ ВХОД!`);
+      console.log(`📧 Почта: ${email}`);
+      console.log(`🔑 ВАШ КОД: ${otp}`);
       console.log(`========================================\n\n`);
-      res.json({ success: true, message: 'Код сгенерирован! Проверьте логи (Logs) на Render.' });
+      res.json({ success: true, message: 'Код сгенерирован! Смотрите логи Render.' });
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Ошибка: ' + err.message });
   }
 });
 
@@ -221,7 +202,6 @@ app.post('/api/verify-code', async (req, res) => {
   }
 });
 
-// --- ЧАТЫ И СООБЩЕНИЯ ---
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({
@@ -229,9 +209,7 @@ app.get('/api/chats', authMiddleware, async (req, res) => {
       args: [req.user.id]
     });
     res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/chats', authMiddleware, async (req, res) => {
@@ -241,9 +219,7 @@ app.post('/api/chats', authMiddleware, async (req, res) => {
       args: [req.user.id, 'Новый чат']
     });
     res.json({ chatId: result.rows[0].id });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
@@ -259,9 +235,7 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
       args: [chatId]
     });
     res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
@@ -289,10 +263,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
     });
     if (countMsg.rows[0].count === 1) {
       const title = (message || 'Фото').slice(0, 30) + ((message || 'Фото').length > 30 ? '...' : '');
-      await db.execute({
-        sql: 'UPDATE chats SET title = ? WHERE id = ?',
-        args: [title, chatId]
-      });
+      await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
     }
 
     const isDrawRequest = /нарисуй|сгенерируй|покажи картинку|создай изображение/i.test(message || '');
@@ -311,10 +282,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20',
       args: [chatId]
     });
-    const history = historyResult.rows.reverse().map(row => ({
-      role: row.role,
-      content: row.content
-    }));
+    const history = historyResult.rows.reverse().map(row => ({ role: row.role, content: row.content }));
 
     const userContent = imageBase64 
       ? [ { type: "text", text: message || "Что на этой картинке?" }, { type: "image_url", image_url: { url: imageBase64 } } ]
