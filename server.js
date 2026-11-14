@@ -54,7 +54,6 @@ async function initDB() {
       )
     `);
     
-    // АВТО-ДОБАВЛЕНИЕ КОЛОНОК
     try { await db.execute('SELECT memory_facts FROM users LIMIT 1'); } 
     catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE users ADD COLUMN memory_facts TEXT DEFAULT ""'); }
 
@@ -177,7 +176,6 @@ app.post('/api/vip/activate', async (req, res) => {
     const decoded = jwt.verify(token, 'secret-bank-key');
     if (decoded.userId !== bankUserId) return res.status(403).json({ error: 'Неверный токен банка' });
     
-    // Находим пользователя по email (который передал Банк)
     const userRes = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [decoded.email || ''] });
     if (userRes.rows.length > 0) {
        const baseDate = new Date();
@@ -301,14 +299,26 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
     }
 
-    // 1. ГЕНЕРАЦИЯ КАРТИНКИ (Добавил "сделай" и "покажи")
+    // 1. ГЕНЕРАЦИЯ КАРТИНКИ (С ПРОВЕРКОЙ ЛИМИТА POLLINATIONS)
     const isDrawRequest = /нарисуй|сгенерируй|сделай|покажи|создай|картинку|изображение/i.test(message || '');
     if (isDrawRequest && !imageFile) {
       const prompt = message.replace(/нарисуй|сгенерируй|сделай|покажи|создай|картинку|изображение|мне|пожалуйста/gi, '').trim();
-      const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
-      const replyText = `🎨 Вот твоя картинка: "${prompt}"`;
-      await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, pollUrl] });
-      return res.json({ reply: replyText, imageUrl: pollUrl });
+      
+      try {
+        const checkUrl = `https://image.pollinations.ai/prompt/test?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
+        const checkRes = await fetch(checkUrl, { method: 'HEAD' });
+        
+        if (checkRes.status === 402 || checkRes.status === 429) {
+           return res.json({ reply: '🎨 Лимит генерации картинок исчерпан. Подожди 45 секунд и попробуй снова (это ограничение бесплатного тарифа Pollinations).' });
+        }
+
+        const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
+        const replyText = `🎨 Вот твоя картинка: "${prompt}"`;
+        await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, pollUrl] });
+        return res.json({ reply: replyText, imageUrl: pollUrl });
+      } catch (e) {
+        return res.json({ reply: '🎨 Не удалось связаться с сервисом картинок. Попробуй позже.' });
+      }
     }
 
     // 2. ГЕНЕРАЦИЯ ВИДЕО
