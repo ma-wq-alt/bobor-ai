@@ -70,7 +70,6 @@
   .chat-item .chat-menu { display: none; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 0 5px; }
   .chat-item:hover .chat-menu { display: block; }
 
-  /* БЛОК ЛИМИТОВ */
   .sub-block { background: var(--bg-main); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 10px; text-align: center; }
   .sub-block h4 { margin-bottom: 5px; color: var(--text-main); font-size: 13px; }
   .progress-bar { width: 100%; height: 6px; background: var(--border); border-radius: 3px; margin: 8px 0; overflow: hidden; }
@@ -85,21 +84,30 @@
   .user-actions button { flex: 1; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 12px; cursor: pointer; }
   .user-actions button:hover { background: var(--border); color: var(--text-main); }
   .btn-logout { color: var(--danger) !important; border-color: var(--danger) !important; }
-  .btn-logout:hover { background: rgba(239, 68, 68, 0.1) !important; }
 
   .chat-area { flex: 1; display: flex; flex-direction: column; background: var(--chat-bg); }
   .chat-header { padding: 15px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
   .chat-title { font-weight: 600; font-size: 16px; }
-  .messages { flex: 1; padding: 20px 10%; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+  
+  /* ШИРОКИЕ ПУЗЫРИ СООБЩЕНИЙ */
+  .messages { flex: 1; padding: 20px 5%; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
   .msg-row { display: flex; gap: 16px; max-width: 100%; animation: slideUp 0.3s ease-out; }
   .msg-row.user { flex-direction: row-reverse; }
   .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 14px; font-weight: 600; flex-shrink: 0; background: var(--border); color: var(--text-main); }
   .msg-row.bot .avatar { background: var(--primary); color: #fff; }
-  .msg-content { padding: 12px 18px; border-radius: 16px; line-height: 1.6; font-size: 15px; max-width: 85%; word-wrap: break-word; }
+  .msg-content { padding: 12px 18px; border-radius: 16px; line-height: 1.6; font-size: 15px; max-width: 80%; word-wrap: break-word; }
   .msg-row.bot .msg-content { background: var(--msg-bot-bg); border-top-left-radius: 4px; }
   .msg-row.user .msg-content { background: var(--msg-user-bg); color: #fff; border-top-right-radius: 4px; }
   .msg-content img, .msg-content video { max-width: 100%; border-radius: 12px; margin-top: 10px; display: block; }
-  
+
+  /* КНОПКИ ИЗМЕНИТЬ И КОПИРОВАТЬ */
+  .copy-btn, .edit-btn { 
+    background: rgba(255,255,255,0.1); border: 1px solid var(--border); color: var(--text-muted); 
+    font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer; 
+    margin-top: 8px; margin-right: 5px; display: inline-block; float: right;
+  }
+  .copy-btn:hover, .edit-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+
   .typing-indicator { display: flex; gap: 4px; padding: 12px 18px; background: var(--msg-bot-bg); border-radius: 16px; border-top-left-radius: 4px; width: fit-content; align-items: center; }
   .typing-indicator span { width: 6px; height: 6px; background: var(--text-muted); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
   .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
@@ -110,10 +118,20 @@
   .mode-selector { display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; }
   .mode-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--sidebar-bg); color: var(--text-muted); cursor: pointer; font-size: 12px; }
   .mode-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  
+  /* НОРМАЛЬНЫЕ КНОПКИ ОТПРАВКИ И СТОП */
   .input-row { display: flex; gap: 10px; background: var(--input-bg); padding: 10px; border-radius: 16px; border: 1px solid var(--border); align-items: center; }
   .input-row input[type="text"] { flex: 1; background: transparent; border: none; color: var(--text-main); font-size: 16px; outline: none; }
-  .btn-send { background: var(--primary); border: none; border-radius: 10px; color: #fff; width: 40px; height: 40px; cursor: pointer; }
-  .btn-attach { background: transparent; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 0 10px; }
+  
+  .btn-send, .btn-stop { 
+    background: var(--primary); border: none; border-radius: 10px; color: #fff; 
+    width: 44px; height: 44px; cursor: pointer; display: flex; justify-content: center; align-items: center; 
+    font-size: 18px; flex-shrink: 0; transition: 0.2s;
+  }
+  .btn-send:hover { background: var(--primary-hover); }
+  .btn-stop { background: var(--danger); font-size: 16px; }
+  .btn-stop:hover { background: #dc2626; }
+  .btn-attach { background: transparent; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; padding: 0 10px; }
 
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: none; justify-content: center; align-items: center; z-index: 1000; }
   .modal { background: var(--sidebar-bg); padding: 30px; border-radius: 20px; width: 420px; border: 1px solid var(--border); }
@@ -206,9 +224,7 @@
   <div class="chat-area">
     <div class="chat-header">
       <div class="chat-title">Бобор-AI</div>
-      <div class="header-actions">
-        <button class="icon-btn" onclick="logout()">Выйти</button>
-      </div>
+      <button class="icon-btn" onclick="logout()" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer;">Выйти</button>
     </div>
     <div class="messages" id="messages">
       <div class="msg-row bot"><div class="avatar">AI</div><div class="msg-content">Привет! Я Бобор-AI.</div></div>
@@ -223,8 +239,8 @@
         <input type="file" id="fileInput" accept="image/*" style="display: none;" onchange="handleFileSelect(event)">
         <button class="btn-attach" onclick="document.getElementById('fileInput').click()">📎</button>
         <input type="text" id="messageInput" placeholder="Напиши сообщение..." onkeydown="if(event.key==='Enter') sendMessage()">
-        <button class="btn-send" id="btnSend" onclick="sendMessage()">➤</button>
-        <button class="btn-send" id="btnStop" onclick="stopGeneration()" style="display: none; background: var(--danger); font-size: 14px;">■</button>
+        <button class="btn-send" id="btnSend" onclick="sendMessage()">✈</button>
+        <button class="btn-stop" id="btnStop" onclick="stopGeneration()" style="display: none;">■</button>
       </div>
     </div>
   </div>
@@ -331,9 +347,7 @@
         const left = Math.max(0, data.ai_free_left);
         document.getElementById('freeText').textContent = `Осталось: ${left}`;
         document.getElementById('freeProgress').style.width = `${(left / 20) * 100}%`;
-        if (left <= 0) {
-          document.getElementById('freeText').style.color = 'var(--danger)';
-        }
+        if (left <= 0) document.getElementById('freeText').style.color = 'var(--danger)';
       }
     } catch (e) { console.log(e); }
   }
@@ -387,23 +401,15 @@
       div.className = 'chat-item' + (chat.id === currentChatId ? ' active' : '') + (chat.pinned ? ' pinned' : '');
       
       const titleSpan = document.createElement('span');
-      titleSpan.style.flex = '1';
-      titleSpan.style.overflow = 'hidden';
-      titleSpan.style.textOverflow = 'ellipsis';
+      titleSpan.style.flex = '1'; titleSpan.style.overflow = 'hidden'; titleSpan.style.textOverflow = 'ellipsis';
       titleSpan.textContent = chat.title || 'Без названия';
       titleSpan.onclick = () => openChat(chat.id);
       
       const menuBtn = document.createElement('button');
-      menuBtn.className = 'chat-menu';
-      menuBtn.textContent = '⋮';
-      menuBtn.onclick = (e) => {
-        e.stopPropagation();
-        showChatMenu(e, chat.id, chat.title, chat.pinned);
-      };
+      menuBtn.className = 'chat-menu'; menuBtn.textContent = '⋮';
+      menuBtn.onclick = (e) => { e.stopPropagation(); showChatMenu(e, chat.id, chat.title, chat.pinned); };
       
-      div.appendChild(titleSpan);
-      div.appendChild(menuBtn);
-      list.appendChild(div);
+      div.appendChild(titleSpan); div.appendChild(menuBtn); list.appendChild(div);
     });
   }
 
@@ -413,27 +419,14 @@
     
     const menu = document.createElement('div');
     menu.className = 'chat-menu-dropdown';
-    menu.style.top = event.pageY + 'px';
-    menu.style.left = event.pageX + 'px';
+    menu.style.top = event.pageY + 'px'; menu.style.left = event.pageX + 'px';
     
-    const renameDiv = document.createElement('div');
-    renameDiv.textContent = 'Переименовать';
-    renameDiv.onclick = () => renameChat(chatId, title);
-    
-    const pinDiv = document.createElement('div');
-    pinDiv.textContent = pinned ? 'Открепить' : 'Закрепить';
-    pinDiv.onclick = () => togglePin(chatId);
-    
-    const delDiv = document.createElement('div');
-    delDiv.className = 'danger';
-    delDiv.textContent = 'Удалить';
-    delDiv.onclick = () => deleteChat(chatId);
+    const renameDiv = document.createElement('div'); renameDiv.textContent = 'Переименовать'; renameDiv.onclick = () => renameChat(chatId, title);
+    const pinDiv = document.createElement('div'); pinDiv.textContent = pinned ? 'Открепить' : 'Закрепить'; pinDiv.onclick = () => togglePin(chatId);
+    const delDiv = document.createElement('div'); delDiv.className = 'danger'; delDiv.textContent = 'Удалить'; delDiv.onclick = () => deleteChat(chatId);
 
-    menu.appendChild(renameDiv);
-    menu.appendChild(pinDiv);
-    menu.appendChild(delDiv);
+    menu.appendChild(renameDiv); menu.appendChild(pinDiv); menu.appendChild(delDiv);
     document.body.appendChild(menu);
-    
     setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 10);
   }
 
@@ -510,11 +503,8 @@
       if (res.ok) { addMessageToUI(data.reply, 'bot', data.imageUrl); loadChats(); updateLimits(); } 
       else { addMessageToUI('Ошибка: ' + data.error, 'bot'); updateLimits(); }
     } catch (err) { 
-      if (err.name === 'AbortError') {
-        addMessageToUI('Генерация остановлена.', 'bot');
-      } else {
-        addMessageToUI('Ошибка соединения', 'bot'); 
-      }
+      if (err.name === 'AbortError') addMessageToUI('Генерация остановлена.', 'bot');
+      else addMessageToUI('Ошибка соединения', 'bot'); 
       removeTypingIndicator();
       document.getElementById('btnSend').style.display = 'flex';
       document.getElementById('btnStop').style.display = 'none';
