@@ -88,7 +88,6 @@ function authMiddleware(req, res, next) {
   catch (err) { res.status(401).json({ error: 'Неверный токен' }); }
 }
 
-// --- АВТОРИЗАЦИЯ ---
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
@@ -168,7 +167,6 @@ app.get('/api/user/limits', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- БАЗА ЗНАНИЙ ---
 app.get('/api/bot/knowledge', authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Только для админа' });
   try {
@@ -187,7 +185,6 @@ app.post('/api/bot/knowledge', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ЧАТЫ ---
 app.get('/api/chats', authMiddleware, async (req, res) => {
   try {
     const result = await db.execute({ sql: 'SELECT * FROM chats WHERE user_id = ? ORDER BY pinned DESC, created_at DESC', args: [req.user.id] });
@@ -238,20 +235,21 @@ app.get('/api/chats/:chatId/messages', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ОТПРАВКА СООБЩЕНИЙ (С ПРОВЕРКОЙ ЛИМИТОВ) ---
 app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), async (req, res) => {
   const { chatId } = req.params;
   const { message, mode } = req.body; 
   const imageFile = req.file;
 
   try {
-    // ПРОВЕРКА ЛИМИТА
-    const userCheck = await db.execute({ sql: 'SELECT ai_free_left, ai_sub_until FROM users WHERE email = ?', args: [req.user.email] });
+    // ПРОВЕРКА ЛИМИТА (Админ не тратит лимиты)
+    const userCheck = await db.execute({ sql: 'SELECT ai_free_left, ai_sub_until, role FROM users WHERE email = ?', args: [req.user.email] });
     const userData = userCheck.rows[0];
     
     if (userData) {
+      const isAdmin = req.user.role === 'admin' || userData.role === 'admin';
       const hasSub = userData.ai_sub_until && new Date(userData.ai_sub_until) > new Date();
-      if (!hasSub) {
+      
+      if (!isAdmin && !hasSub) {
         if ((userData.ai_free_left ?? 0) <= 0) {
           return res.status(403).json({ error: 'Лимит бесплатных запросов исчерпан. Оплатите подписку!' });
         }
@@ -286,8 +284,12 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
 
     // 2. ГЕНЕРАЦИЯ ВИДЕО
     if (/видео|video/i.test(message || '')) {
-      const prompt = message.replace(/видео|video|сгенерируй|создай|сделай/gi, '').trim();
-      if (!prompt) return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать.' });
+      const prompt = message.replace(/видео|video|сгенерируй|создай|сделай|про/gi, '').trim();
+      if (!prompt) return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать (например: "видео котик в космосе").' });
+
+      if (!process.env.AGNES_API_KEY) {
+         return res.json({ reply: '🎬 Ошибка: API-ключ для видео (AGNES_API_KEY) не настроен в Render.' });
+      }
 
       try {
         const agnesRes = await fetch('https://apihub.agnes-ai.com/v1/videos', {
@@ -295,10 +297,15 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
           headers: { 'Authorization': `Bearer ${process.env.AGNES_API_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: 'agnes-video-2.5-flash', prompt: prompt, seconds: '5', mode: 'text', size: '720P', aspect_ratio: '16:9' })
         });
-        if (!agnesRes.ok) throw new Error(`Agnes API: ${agnesRes.status}`);
+        
+        if (!agnesRes.ok) {
+           const errText = await agnesRes.text();
+           throw new Error(`Agnes API вернул ${agnesRes.status}: ${errText}`);
+        }
+        
         const agnesData = await agnesRes.json();
         const videoId = agnesData.video_id || agnesData.id;
-        if (!videoId) throw new Error('Agnes не вернул video_id');
+        if (!videoId) throw new Error('Agnes не вернул ID видео');
 
         let videoUrl = null;
         let attempts = 0;
@@ -307,16 +314,24 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
           const statusRes = await fetch(`https://apihub.agnes-ai.com/agnesapi?video_id=${videoId}&model_name=agnes-video-2.5-flash`, { headers: { 'Authorization': `Bearer ${process.env.AGNES_API_KEY}` } });
           if (!statusRes.ok) { attempts++; continue; }
           const statusData = await statusRes.json();
+          
           if (statusData.status === 'completed') { videoUrl = statusData.url; break; }
-          else if (statusData.status === 'failed') throw new Error('Agnes не смог сгенерировать видео');
+          else if (statusData.status === 'failed') throw new Error('Agnes AI не смог сгенерировать видео (сервер перегружен)');
           attempts++;
         }
-        if (!videoUrl) return res.json({ reply: `🎬 Видео все еще генерируется. Проверь позже: https://apihub.agnes-ai.com/agnesapi?video_id=${videoId}&model_name=agnes-video-2.5-flash` });
+        
+        if (!videoUrl) {
+           return res.json({ reply: `🎬 Видео все еще генерируется. Проверь позже: https://apihub.agnes-ai.com/agnesapi?video_id=${videoId}&model_name=agnes-video-2.5-flash` });
+        }
         
         const replyText = `🎬 Вот твое видео: "${prompt}"`;
         await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, videoUrl] });
         return res.json({ reply: replyText, imageUrl: videoUrl });
-      } catch (videoErr) { return res.json({ reply: '🎬 Не удалось сгенерировать видео: ' + videoErr.message }); }
+
+      } catch (videoErr) { 
+        console.error('Ошибка видео:', videoErr);
+        return res.json({ reply: '🎬 Ошибка генерации видео: ' + videoErr.message }); 
+      }
     }
 
     // 3. ПАМЯТЬ (RAG)
@@ -349,7 +364,30 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       } catch (e) { console.log('Ошибка памяти:', e.message); }
     }
 
-    // 4. ТЕКСТОВЫЙ ОТВЕТ
+    // --- БЕСПЛАТНЫЙ ПОИСК В ИНТЕРНЕТЕ (ai-first-search) ---
+    let externalInfo = "";
+    if (/погода|новости|курс|доллар|евро|что случилось|найди|погугли|актуальн/i.test(message || '')) {
+      try {
+        const searchQuery = encodeURIComponent(message);
+        const searchRes = await fetch(`https://ai-first-search.onrender.com/search?q=${searchQuery}&k=3&max_tokens=800`);
+        
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          if (searchData.results && searchData.results.length > 0) {
+            const texts = searchData.results
+              .filter(r => r.ok && r.markdown)
+              .map(r => `Источник: ${r.title}\n${r.markdown}`)
+              .join('\n\n');
+            
+            if (texts) {
+              externalInfo = texts;
+              console.log('🌐 Найдена инфа в интернете для:', message);
+            }
+          }
+        }
+      } catch (e) { console.log('Ошибка бесплатного поиска:', e.message); }
+    }
+
     const historyResult = await db.execute({ sql: 'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 20', args: [chatId] });
     const history = historyResult.rows.reverse().map(row => ({ role: row.role, content: row.content }));
 
@@ -363,6 +401,10 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
 
     let systemPrompt = adminPrompt.trim() !== '' ? adminPrompt : 'Ты — БОБОР-AI, умный и дружелюбный ассистент. Отвечай на русском.';
     if (userMemory) systemPrompt += `\n\nТы знаешь о пользователе: ${userMemory}`;
+    
+    if (externalInfo) {
+      systemPrompt += `\n\n--- СВЕЖАЯ ИНФОРМАЦИЯ ИЗ ИНТЕРНЕТА ---\n${externalInfo}\n--- КОНЕЦ ИНФОРМАЦИИ ---\n\nИспользуй эту информацию, чтобы ответить пользователю. Если информация не по теме, просто проигнорируй её.`;
+    }
 
     const messagesForAI = [ { role: 'system', content: systemPrompt }, ...history ];
     let model = imageFile ? 'glm-4.6v-flash' : 'glm-4.5-flash'; 
