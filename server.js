@@ -169,7 +169,6 @@ app.post('/api/user/settings', authMiddleware, async (req, res) => {
   }
 });
 
-// --- API ДЛЯ БАНКА (ВЫДАЧА ПОДПИСКИ) ---
 app.post('/api/vip/activate', async (req, res) => {
   const { bankUserId, token } = req.body;
   try {
@@ -299,30 +298,8 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
     }
 
-    // 1. ГЕНЕРАЦИЯ КАРТИНКИ (С ПРОВЕРКОЙ ЛИМИТА POLLINATIONS)
-    const isDrawRequest = /нарисуй|сгенерируй|сделай|покажи|создай|картинку|изображение/i.test(message || '');
-    if (isDrawRequest && !imageFile) {
-      const prompt = message.replace(/нарисуй|сгенерируй|сделай|покажи|создай|картинку|изображение|мне|пожалуйста/gi, '').trim();
-      
-      try {
-        const checkUrl = `https://image.pollinations.ai/prompt/test?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
-        const checkRes = await fetch(checkUrl, { method: 'HEAD' });
-        
-        if (checkRes.status === 402 || checkRes.status === 429) {
-           return res.json({ reply: '🎨 Лимит генерации картинок исчерпан. Подожди 45 секунд и попробуй снова (это ограничение бесплатного тарифа Pollinations).' });
-        }
-
-        const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
-        const replyText = `🎨 Вот твоя картинка: "${prompt}"`;
-        await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, pollUrl] });
-        return res.json({ reply: replyText, imageUrl: pollUrl });
-      } catch (e) {
-        return res.json({ reply: '🎨 Не удалось связаться с сервисом картинок. Попробуй позже.' });
-      }
-    }
-
-    // 2. ГЕНЕРАЦИЯ ВИДЕО
-    if (/видео|video|сделай/i.test(message || '')) {
+    // 1. ГЕНЕРАЦИЯ ВИДЕО (СТОИТ ПЕРВОЙ, ЧТОБЫ НЕ ПЕРЕСЕКАТЬСЯ С КАРТИНКАМИ)
+    if (/видео|video/i.test(message || '')) {
       const prompt = message.replace(/видео|video|сгенерируй|создай|сделай|про/gi, '').trim();
       if (!prompt) return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать.' });
 
@@ -370,6 +347,28 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       } catch (videoErr) { 
         console.error('Ошибка видео:', videoErr);
         return res.json({ reply: '🎬 Ошибка генерации видео: ' + videoErr.message }); 
+      }
+    }
+
+    // 2. ГЕНЕРАЦИЯ КАРТИНКИ
+    const isDrawRequest = /нарисуй|сгенерируй|сделай|покажи|создай|картинку|изображение/i.test(message || '');
+    if (isDrawRequest && !imageFile) {
+      const prompt = message.replace(/нарисуй|сгенерируй|сделай|покажи|создай|картинку|изображение|мне|пожалуйста/gi, '').trim();
+      
+      try {
+        const checkUrl = `https://image.pollinations.ai/prompt/test?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
+        const checkRes = await fetch(checkUrl, { method: 'HEAD' });
+        
+        if (checkRes.status === 402 || checkRes.status === 429) {
+           return res.json({ reply: '🎨 Лимит генерации картинок исчерпан. Подожди 45 секунд и попробуй снова (это ограничение бесплатного тарифа Pollinations).' });
+        }
+
+        const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
+        const replyText = `🎨 Вот твоя картинка: "${prompt}"`;
+        await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, pollUrl] });
+        return res.json({ reply: replyText, imageUrl: pollUrl });
+      } catch (e) {
+        return res.json({ reply: '🎨 Не удалось связаться с сервисом картинок. Попробуй позже.' });
       }
     }
 
