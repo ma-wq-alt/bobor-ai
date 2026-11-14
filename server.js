@@ -54,14 +54,25 @@ async function initDB() {
       )
     `);
     
+    // АВТО-ДОБАВЛЕНИЕ КОЛОНОК
     try { await db.execute('SELECT memory_facts FROM users LIMIT 1'); } 
     catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE users ADD COLUMN memory_facts TEXT DEFAULT ""'); }
 
     try { await db.execute('SELECT ai_free_left FROM users LIMIT 1'); } 
-    catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE users ADD COLUMN ai_free_left INTEGER DEFAULT 20'); }
+    catch (e) { 
+      if (e.message.includes('no such column')) {
+        console.log('⚠️ Создаю колонку ai_free_left...');
+        await db.execute('ALTER TABLE users ADD COLUMN ai_free_left INTEGER DEFAULT 20');
+      } 
+    }
 
     try { await db.execute('SELECT ai_sub_until FROM users LIMIT 1'); } 
-    catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE users ADD COLUMN ai_sub_until DATETIME DEFAULT NULL'); }
+    catch (e) { 
+      if (e.message.includes('no such column')) {
+        console.log('⚠️ Создаю колонку ai_sub_until...');
+        await db.execute('ALTER TABLE users ADD COLUMN ai_sub_until DATETIME DEFAULT NULL');
+      } 
+    }
 
     await db.execute(`CREATE TABLE IF NOT EXISTS bot_knowledge (id INTEGER PRIMARY KEY AUTOINCREMENT, prompt_text TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
     await db.execute(`CREATE TABLE IF NOT EXISTS chats (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, title TEXT, pinned INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))`);
@@ -157,6 +168,24 @@ app.post('/api/user/settings', authMiddleware, async (req, res) => {
     if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'Этот ник уже занят' });
     res.status(500).json({ error: err.message });
   }
+});
+
+// --- API ДЛЯ БАНКА (ВЫДАЧА ПОДПИСКИ) ---
+app.post('/api/vip/activate', async (req, res) => {
+  const { bankUserId, token } = req.body;
+  try {
+    const decoded = jwt.verify(token, 'secret-bank-key');
+    if (decoded.userId !== bankUserId) return res.status(403).json({ error: 'Неверный токен банка' });
+    
+    // Находим пользователя по email (который передал Банк)
+    const userRes = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [decoded.email || ''] });
+    if (userRes.rows.length > 0) {
+       const baseDate = new Date();
+       baseDate.setDate(baseDate.getDate() + 30);
+       await db.execute({ sql: 'UPDATE users SET ai_sub_until = ? WHERE email = ?', args: [baseDate.toISOString(), decoded.email] });
+    }
+    res.json({ success: true });
+  } catch (e) { res.status(401).json({ error: 'Неверный токен' }); }
 });
 
 app.get('/api/user/limits', authMiddleware, async (req, res) => {
@@ -272,10 +301,10 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
     }
 
-    // 1. ГЕНЕРАЦИЯ КАРТИНКИ
-    const isDrawRequest = /нарисуй|сгенерируй|покажи картинку|создай изображение/i.test(message || '');
+    // 1. ГЕНЕРАЦИЯ КАРТИНКИ (Добавил "сделай" и "покажи")
+    const isDrawRequest = /нарисуй|сгенерируй|сделай|покажи|создай|картинку|изображение/i.test(message || '');
     if (isDrawRequest && !imageFile) {
-      const prompt = message.replace(/нарисуй|сгенерируй|покажи картинку|создай изображение|мне|пожалуйста/gi, '').trim();
+      const prompt = message.replace(/нарисуй|сгенерируй|сделай|покажи|создай|картинку|изображение|мне|пожалуйста/gi, '').trim();
       const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
       const replyText = `🎨 Вот твоя картинка: "${prompt}"`;
       await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, pollUrl] });
@@ -283,9 +312,9 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
     }
 
     // 2. ГЕНЕРАЦИЯ ВИДЕО
-    if (/видео|video/i.test(message || '')) {
+    if (/видео|video|сделай/i.test(message || '')) {
       const prompt = message.replace(/видео|video|сгенерируй|создай|сделай|про/gi, '').trim();
-      if (!prompt) return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать (например: "видео котик в космосе").' });
+      if (!prompt) return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать.' });
 
       if (!process.env.AGNES_API_KEY) {
          return res.json({ reply: '🎬 Ошибка: API-ключ для видео (AGNES_API_KEY) не настроен в Render.' });
@@ -316,7 +345,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
           const statusData = await statusRes.json();
           
           if (statusData.status === 'completed') { videoUrl = statusData.url; break; }
-          else if (statusData.status === 'failed') throw new Error('Agnes AI не смог сгенерировать видео (сервер перегружен)');
+          else if (statusData.status === 'failed') throw new Error('Agnes AI не смог сгенерировать видео');
           attempts++;
         }
         
