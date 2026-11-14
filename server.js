@@ -54,6 +54,7 @@ async function initDB() {
       )
     `);
     
+    // АВТО-ДОБАВЛЕНИЕ ВСЕХ НУЖНЫХ КОЛОНОК
     try { await db.execute('SELECT memory_facts FROM users LIMIT 1'); } 
     catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE users ADD COLUMN memory_facts TEXT DEFAULT ""'); }
 
@@ -85,7 +86,7 @@ async function initDB() {
       const hash = await bcrypt.hash('1495', 10);
       await db.execute({ sql: 'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)', args: ['hank', adminEmail, hash, 'admin'] });
     }
-    console.log('✅ База данных готова');
+    console.log('✅ База данных готова (все колонки на месте)');
   } catch (err) { console.error('❌ Ошибка БД:', err.message); }
 }
 initDB();
@@ -298,7 +299,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       await db.execute({ sql: 'UPDATE chats SET title = ? WHERE id = ?', args: [title, chatId] });
     }
 
-    // 1. ГЕНЕРАЦИЯ ВИДЕО (СТОИТ ПЕРВОЙ, ЧТОБЫ НЕ ПЕРЕСЕКАТЬСЯ С КАРТИНКАМИ)
+    // 1. ГЕНЕРАЦИЯ ВИДЕО
     if (/видео|video/i.test(message || '')) {
       const prompt = message.replace(/видео|video|сгенерируй|создай|сделай|про/gi, '').trim();
       if (!prompt) return res.json({ reply: 'Напиши, какое видео ты хочешь сгенерировать.' });
@@ -360,7 +361,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
         const checkRes = await fetch(checkUrl, { method: 'HEAD' });
         
         if (checkRes.status === 402 || checkRes.status === 429) {
-           return res.json({ reply: '🎨 Лимит генерации картинок исчерпан. Подожди 45 секунд и попробуй снова (это ограничение бесплатного тарифа Pollinations).' });
+           return res.json({ reply: '🎨 Лимит генерации картинок исчерпан. Подожди 45 секунд и попробуй снова.' });
         }
 
         const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=1280&nologo=true&enhance=true&nofeed=true`;
@@ -368,7 +369,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
         await db.execute({ sql: 'INSERT INTO messages (chat_id, role, content, image_url) VALUES (?, ?, ?, ?)', args: [chatId, 'assistant', replyText, pollUrl] });
         return res.json({ reply: replyText, imageUrl: pollUrl });
       } catch (e) {
-        return res.json({ reply: '🎨 Не удалось связаться с сервисом картинок. Попробуй позже.' });
+        return res.json({ reply: '🎨 Не удалось связаться с сервисом картинок.' });
       }
     }
 
@@ -402,7 +403,7 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
       } catch (e) { console.log('Ошибка памяти:', e.message); }
     }
 
-    // --- БЕСПЛАТНЫЙ ПОИСК В ИНТЕРНЕТЕ (ai-first-search) ---
+    // --- БЕСПЛАТНЫЙ ПОИСК В ИНТЕРНЕТЕ ---
     let externalInfo = "";
     if (/погода|новости|курс|доллар|евро|что случилось|найди|погугли|актуальн/i.test(message || '')) {
       try {
