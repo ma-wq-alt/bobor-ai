@@ -50,6 +50,8 @@
   .auth-box input { width: 100%; padding: 14px; margin-bottom: 15px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-main); color: var(--text-main); font-size: 15px; outline: none; }
   .auth-box input:focus { border-color: var(--primary); }
   .auth-box button { width: 100%; padding: 14px; background: var(--primary); border: none; border-radius: 12px; color: #fff; font-weight: 600; font-size: 15px; cursor: pointer; margin-bottom: 10px; }
+  .btn-reg { background: transparent !important; border: 1px solid var(--primary) !important; color: var(--primary) !important; }
+  .btn-reg:hover { background: var(--primary) !important; color: #fff !important; }
   .auth-msg { font-size: 14px; color: var(--danger); margin-top: 10px; min-height: 20px; }
   .timer-text { font-size: 12px; color: var(--text-muted); margin-top: 5px; }
 
@@ -88,8 +90,6 @@
   .chat-area { flex: 1; display: flex; flex-direction: column; background: var(--chat-bg); }
   .chat-header { padding: 15px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
   .chat-title { font-weight: 600; font-size: 16px; }
-  
-  /* ШИРОКИЕ ПУЗЫРИ СООБЩЕНИЙ */
   .messages { flex: 1; padding: 20px 5%; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
   .msg-row { display: flex; gap: 16px; max-width: 100%; animation: slideUp 0.3s ease-out; }
   .msg-row.user { flex-direction: row-reverse; }
@@ -100,12 +100,7 @@
   .msg-row.user .msg-content { background: var(--msg-user-bg); color: #fff; border-top-right-radius: 4px; }
   .msg-content img, .msg-content video { max-width: 100%; border-radius: 12px; margin-top: 10px; display: block; }
 
-  /* КНОПКИ ИЗМЕНИТЬ И КОПИРОВАТЬ */
-  .copy-btn, .edit-btn { 
-    background: rgba(255,255,255,0.1); border: 1px solid var(--border); color: var(--text-muted); 
-    font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer; 
-    margin-top: 8px; margin-right: 5px; display: inline-block; float: right;
-  }
+  .copy-btn, .edit-btn { background: rgba(255,255,255,0.1); border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer; margin-top: 8px; margin-right: 5px; display: inline-block; float: right; }
   .copy-btn:hover, .edit-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
 
   .typing-indicator { display: flex; gap: 4px; padding: 12px 18px; background: var(--msg-bot-bg); border-radius: 16px; border-top-left-radius: 4px; width: fit-content; align-items: center; }
@@ -118,16 +113,10 @@
   .mode-selector { display: flex; gap: 8px; margin-bottom: 12px; justify-content: center; }
   .mode-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--sidebar-bg); color: var(--text-muted); cursor: pointer; font-size: 12px; }
   .mode-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
-  
-  /* НОРМАЛЬНЫЕ КНОПКИ ОТПРАВКИ И СТОП */
   .input-row { display: flex; gap: 10px; background: var(--input-bg); padding: 10px; border-radius: 16px; border: 1px solid var(--border); align-items: center; }
   .input-row input[type="text"] { flex: 1; background: transparent; border: none; color: var(--text-main); font-size: 16px; outline: none; }
   
-  .btn-send, .btn-stop { 
-    background: var(--primary); border: none; border-radius: 10px; color: #fff; 
-    width: 44px; height: 44px; cursor: pointer; display: flex; justify-content: center; align-items: center; 
-    font-size: 18px; flex-shrink: 0; transition: 0.2s;
-  }
+  .btn-send, .btn-stop { background: var(--primary); border: none; border-radius: 10px; color: #fff; width: 44px; height: 44px; cursor: pointer; display: flex; justify-content: center; align-items: center; font-size: 18px; flex-shrink: 0; transition: 0.2s; }
   .btn-send:hover { background: var(--primary-hover); }
   .btn-stop { background: var(--danger); font-size: 16px; }
   .btn-stop:hover { background: #dc2626; }
@@ -158,13 +147,14 @@
   <div class="auth-box">
     <h2>БОБОР-AI</h2>
     <div class="tabs">
-      <div class="tab active" onclick="switchTab('pass')">Пароль</div>
+      <div class="tab active" onclick="switchTab('pass')">Вход</div>
       <div class="tab" onclick="switchTab('email')">Код на почту</div>
     </div>
     <div id="tab-pass" class="tab-content active">
       <input type="text" id="loginUser" placeholder="Ник или Email">
       <input type="password" id="loginPass" placeholder="Пароль">
       <button onclick="login()">Войти</button>
+      <button class="btn-reg" onclick="register()">Регистрация</button>
     </div>
     <div id="tab-email" class="tab-content">
       <input type="email" id="emailInput" placeholder="Твоя почта">
@@ -281,6 +271,17 @@
       localStorage.setItem('token', data.token); localStorage.setItem('username', data.username); localStorage.setItem('role', data.role);
       localStorage.setItem('theme', data.theme || 'dark'); localStorage.setItem('language', data.language || 'ru');
       location.reload();
+    } else { document.getElementById('authMsg').textContent = data.error; }
+  }
+
+  async function register() {
+    const username = document.getElementById('loginUser').value;
+    const password = document.getElementById('loginPass').value;
+    const email = prompt('Введите вашу почту для восстановления пароля (или оставьте пустым):');
+    const res = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, email }) });
+    const data = await res.json();
+    if (res.ok) {
+      alert(`Аккаунт создан! Роль: ${data.role}. Теперь войдите.`);
     } else { document.getElementById('authMsg').textContent = data.error; }
   }
 
