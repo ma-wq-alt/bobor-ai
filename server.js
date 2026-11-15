@@ -20,11 +20,14 @@ const db = createClient({
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bobor-super-secret-key-123';
-const BANK_WS_URL = process.env.BANK_URL || 'wss://bobor-bank.onrender.com';
 
+// --- ПОЧТА ---
 const transporter = nodemailer.createTransport({
   service: 'gmail',
-  auth: { user: process.env.EMAIL_USER || '', pass: process.env.EMAIL_PASS || '' }
+  auth: { 
+    user: process.env.EMAIL_USER || '', 
+    pass: process.env.EMAIL_PASS || '' 
+  }
 });
 
 async function fetchWithRetry(url, options, retries = 3, delay = 3000) {
@@ -54,7 +57,6 @@ async function initDB() {
       )
     `);
     
-    // АВТО-ДОБАВЛЕНИЕ ВСЕХ НУЖНЫХ КОЛОНОК
     try { await db.execute('SELECT memory_facts FROM users LIMIT 1'); } 
     catch (e) { if (e.message.includes('no such column')) await db.execute('ALTER TABLE users ADD COLUMN memory_facts TEXT DEFAULT ""'); }
 
@@ -86,7 +88,7 @@ async function initDB() {
       const hash = await bcrypt.hash('1495', 10);
       await db.execute({ sql: 'INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)', args: ['hank', adminEmail, hash, 'admin'] });
     }
-    console.log('✅ База данных готова (все колонки на месте)');
+    console.log('✅ База данных готова');
   } catch (err) { console.error('❌ Ошибка БД:', err.message); }
 }
 initDB();
@@ -99,6 +101,29 @@ function authMiddleware(req, res, next) {
   catch (err) { res.status(401).json({ error: 'Неверный токен' }); }
 }
 
+// --- РЕГИСТРАЦИЯ ---
+app.post('/api/register', async (req, res) => {
+  const { username, password, email } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    
+    const check = await db.execute({ sql: 'SELECT id FROM users WHERE username = ? OR email = ?', args: [username, email || ''] });
+    if (check.rows.length > 0) return res.status(400).json({ error: 'Логин или почта уже заняты' });
+
+    const countRes = await db.execute('SELECT COUNT(*) as count FROM users');
+    const isFirst = countRes.rows[0].count === 0;
+    const role = isFirst ? 'admin' : 'user';
+
+    await db.execute({ 
+      sql: 'INSERT INTO users (username, password_hash, email, role) VALUES (?, ?, ?, ?)', 
+      args: [username, hash, email || null, role] 
+    });
+    res.json({ success: true, role });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// --- ВХОД ---
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Введите логин и пароль' });
@@ -113,6 +138,7 @@ app.post('/api/login', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Ошибка сервера' }); }
 });
 
+// --- ОТПРАВКА КОДА НА ПОЧТУ ---
 app.post('/api/send-code', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Введите почту' });
@@ -143,6 +169,7 @@ app.post('/api/send-code', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Ошибка отправки' }); }
 });
 
+// --- ПРОВЕРКА КОДА ---
 app.post('/api/verify-code', async (req, res) => {
   const { email, code } = req.body;
   try {
@@ -268,7 +295,6 @@ app.post('/api/chats/:chatId/message', authMiddleware, upload.single('image'), a
   const imageFile = req.file;
 
   try {
-    // ПРОВЕРКА ЛИМИТА (Админ не тратит лимиты)
     const userCheck = await db.execute({ sql: 'SELECT ai_free_left, ai_sub_until, role FROM users WHERE email = ?', args: [req.user.email] });
     const userData = userCheck.rows[0];
     
